@@ -1,0 +1,4 @@
+variant_id,variant_class,mutations,n_mutations,activity_pa6_1,activity_pa6_2,activity_pa6_3,activity_pa6_4,tm_celsius_1,tm_celsius_2,strucuture_file,activity_n,activity_pa6,activity_sd,activity_sem,tm_celsius,activity_sem_for_gp,control_reason,selection_bucket,panel_rank
+WT,single,,1,79,75,79.0,,85.8,85.7,75.cif,3,77.66666666666667,2.3094010767585034,1.3333333333333335,85.75,1.3333333333333335,WT,control,18
+F134W_D304M_R330A,triple,F134W;D304M;R330A,3,520,520,520.0,,89.8,90.1,520.cif,3,520.0,0.0,0.0,89.94999999999999,0.0,highest_activity,control,19
+F134W,single,F134W,1,212,222,,,86.1,86.2,222.cif,2,217.0,7.0710678118654755,5.0,86.15,5.0,median_activity,control,20

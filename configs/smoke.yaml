@@ -1,0 +1,23 @@
+extends: default.yaml
+experiment: smoke
+data:
+  subset_variant_ids: [WT, D99G, D99R, D99V, F134W, D304M]
+features:
+  sources: [physical]
+gp:
+  inner_restarts: 1
+  final_restarts: 1
+  max_iterations: 20
+validation:
+  family_holdout: false
+  compare_model_families: false
+  baselines: true
+  baseline_descriptor: physical
+selection:
+  sources: [physical]
+  panel_size: 5
+  controls: 2
+  shortlist_sizes: [5, 8]
+  primary_shortlist: 5
+  activity_fraction: 0.01
+  sensitivity_seeds: 5

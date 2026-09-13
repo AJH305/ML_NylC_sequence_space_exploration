@@ -1,0 +1,2 @@
+descriptor_set,model,pca_components,selection_inner_loocv_mae,selection_inner_loocv_rmse,deployment_sigma_scale,model_fit_provenance
+physical,epistatic,,43.32054530843459,57.089605078701,1.1196536421475214,end_to_end_refit_from_raw_lab_data

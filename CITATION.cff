@@ -1,0 +1,10 @@
+cff-version: 1.2.0
+message: "Please cite the archived release of this research software when available."
+title: "ML_NylC: Reproducible Epistatic GP modelling and DPP selection"
+type: software
+authors:
+  - family-names: Hehner
+    given-names: Arthur
+version: 0.1.0
+license: MIT
+abstract: "Python and Snakemake pipeline for NylC activity modelling, nested validation, calibrated uncertainty and experimental panel selection."

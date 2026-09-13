@@ -1,0 +1,2 @@
+lengthscale_multiplier,sigma_main,sigma_epi,sigma_noise,regularized_neg_log_marginal_likelihood,optimizer_success,optimizer_message,optimizer_iterations,successful_restarts,n_restarts,any_boundary_hit,boundary_hits
+0.40170779145121477,0.5278152644171762,0.7810603848081166,0.2948398572908884,35.39307989562898,True,CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL,22,8,8,False,"{""lengthscale_multiplier"": false, ""sigma_epi"": false, ""sigma_main"": false, ""sigma_noise"": false}"

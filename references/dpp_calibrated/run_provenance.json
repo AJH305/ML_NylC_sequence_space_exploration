@@ -1,0 +1,56 @@
+{
+  "configuration": {
+    "activity_fraction_of_best": 0.8,
+    "activity_fractions_sensitivity": [
+      0.7,
+      0.8,
+      0.9
+    ],
+    "deployment_sigma_scale": 1.1196536421475214,
+    "dpp_random_seed": 20260823,
+    "dpp_sensitivity_n_seeds": 100,
+    "feature_sources": [
+      "kidera",
+      "vhse",
+      "z_scales",
+      "atchley",
+      "pcp",
+      "physical"
+    ],
+    "lab_panel_size": 20,
+    "mll_final_n_starts": 8,
+    "mll_inner_n_starts": 3,
+    "mll_maxiter": 300,
+    "mll_random_seed": 20250308,
+    "n_controls": 3,
+    "primary_shortlist_size": 25,
+    "run_nested_validation": true,
+    "shortlist_sizes": [
+      20,
+      25,
+      30
+    ]
+  },
+  "inputs": {
+    "boltzgen_candidates": {
+      "path": "c:\\Users\\Arthur Hehner\\OneDrive\\Dokumente\\Bachelorarbeit\\nylon_md_features\\inputs\\boltz_variants\\final_designs_metrics_160.csv",
+      "sha256": "5c4c580c697a85014c06c63c58bfea9f65d3669e0cc97c763a0828e02cc09cc4"
+    },
+    "lab_data": {
+      "path": "c:\\Users\\Arthur Hehner\\OneDrive\\Dokumente\\Bachelorarbeit\\nylon_md_features\\matrices\\NylC_Puetz_raw_data.CSV",
+      "sha256": "03314cb92595ce7a0986c5d33bf433409b33adec63257210805a98d92558168b"
+    }
+  },
+  "model_fit_provenance": "end_to_end_refit_from_raw_lab_data",
+  "software": {
+    "matplotlib": "3.11.1",
+    "numpy": "2.5.2",
+    "pandas": "3.0.5",
+    "peptides": "0.5.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "python": "3.14.7 (tags/v3.14.7:823f032, Aug  5 2026, 10:51:32) [MSC v.1944 64 bit (AMD64)]",
+    "scikit-learn": "1.9.0",
+    "scipy": "1.18.1"
+  },
+  "workflow": "self_contained_sigma_calibrated_gp_exploitation_k_dpp"
+}

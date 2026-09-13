@@ -1,0 +1,392 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "experiment": {
+      "type": "string"
+    },
+    "inputs": {
+      "type": "object",
+      "properties": {
+        "lab_data": {
+          "type": "string"
+        },
+        "wt_fasta": {
+          "type": "string"
+        },
+        "candidates": {
+          "type": "string"
+        },
+        "checksums": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "lab_data",
+        "wt_fasta",
+        "candidates",
+        "checksums"
+      ],
+      "additionalProperties": false
+    },
+    "data": {
+      "type": "object",
+      "properties": {
+        "subset_variant_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "candidate_run": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "subset_variant_ids",
+        "candidate_run"
+      ],
+      "additionalProperties": false
+    },
+    "features": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "learned": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "model"
+            ],
+            "properties": {
+              "kind": {
+                "enum": [
+                  "esm2",
+                  "metl"
+                ]
+              },
+              "model": {
+                "type": "string"
+              },
+              "revision": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{40}$"
+              },
+              "representation": {
+                "enum": [
+                  "target",
+                  "global_delta",
+                  "window_delta"
+                ]
+              },
+              "window_radius": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "checkpoint": {
+                "type": "string"
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "esm2"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "revision",
+                    "representation"
+                  ]
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "kind": {
+                      "const": "metl"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "checkpoint",
+                    "sha256"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "sources",
+        "learned"
+      ],
+      "additionalProperties": false
+    },
+    "gp": {
+      "type": "object",
+      "properties": {
+        "pca_components": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "uniqueItems": true
+        },
+        "inner_restarts": {
+          "type": "integer"
+        },
+        "final_restarts": {
+          "type": "integer"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "max_iterations": {
+          "type": "integer"
+        },
+        "bounds": {
+          "type": "object",
+          "properties": {
+            "lengthscale_multiplier": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "uniqueItems": true
+            },
+            "sigma_main": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "uniqueItems": true
+            },
+            "sigma_epi": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "uniqueItems": true
+            },
+            "sigma_noise": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "uniqueItems": true
+            }
+          },
+          "required": [
+            "lengthscale_multiplier",
+            "sigma_main",
+            "sigma_epi",
+            "sigma_noise"
+          ],
+          "additionalProperties": false
+        },
+        "log_prior_sd": {
+          "type": "object",
+          "properties": {
+            "lengthscale_multiplier": {
+              "type": "number"
+            },
+            "sigma_main": {
+              "type": "number"
+            },
+            "sigma_noise": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "lengthscale_multiplier",
+            "sigma_main",
+            "sigma_noise"
+          ],
+          "additionalProperties": false
+        },
+        "noise_prior_center": {
+          "type": "number"
+        },
+        "epistasis_shrinkage_scale": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "pca_components",
+        "inner_restarts",
+        "final_restarts",
+        "seed",
+        "max_iterations",
+        "bounds",
+        "log_prior_sd",
+        "noise_prior_center",
+        "epistasis_shrinkage_scale"
+      ],
+      "additionalProperties": false
+    },
+    "validation": {
+      "type": "object",
+      "properties": {
+        "family_holdout": {
+          "type": "boolean"
+        },
+        "compare_model_families": {
+          "type": "boolean"
+        },
+        "baselines": {
+          "type": "boolean"
+        },
+        "baseline_descriptor": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "family_holdout",
+        "compare_model_families",
+        "baselines",
+        "baseline_descriptor"
+      ],
+      "additionalProperties": false
+    },
+    "selection": {
+      "type": "object",
+      "properties": {
+        "sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "uniqueItems": true
+        },
+        "panel_size": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "controls": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "shortlist_sizes": {
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "uniqueItems": true
+        },
+        "primary_shortlist": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "activity_fraction": {
+          "type": "number"
+        },
+        "sensitivity_activity_fractions": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "uniqueItems": true
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "sensitivity_seeds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "jitter": {
+          "type": "number"
+        },
+        "eigenvalue_tolerance": {
+          "type": "number"
+        },
+        "exclude_already_tested": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "sources",
+        "panel_size",
+        "controls",
+        "shortlist_sizes",
+        "primary_shortlist",
+        "activity_fraction",
+        "sensitivity_activity_fractions",
+        "seed",
+        "sensitivity_seeds",
+        "jitter",
+        "eigenvalue_tolerance",
+        "exclude_already_tested"
+      ],
+      "additionalProperties": false
+    },
+    "runtime": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer"
+        },
+        "threads": {
+          "type": "integer"
+        },
+        "batch_size": {
+          "type": "integer"
+        },
+        "deterministic": {
+          "type": "boolean"
+        },
+        "offline": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "device",
+        "seed",
+        "threads",
+        "batch_size",
+        "deterministic",
+        "offline"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema_version",
+    "experiment",
+    "inputs",
+    "data",
+    "features",
+    "gp",
+    "validation",
+    "selection",
+    "runtime"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ML_NylC experiment configuration"
+}

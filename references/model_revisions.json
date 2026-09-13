@@ -1,0 +1,10 @@
+{
+  "facebook/esm2_t6_8M_UR50D": {
+    "revision": "c731040fcd8d73dceaa04b0a8e6329b345b0f5df",
+    "source": "https://huggingface.co/facebook/esm2_t6_8M_UR50D"
+  },
+  "facebook/esm2_t33_650M_UR50D": {
+    "revision": "08e4846e537177426273712802403f7ba8261b6c",
+    "source": "https://huggingface.co/facebook/esm2_t33_650M_UR50D"
+  }
+}

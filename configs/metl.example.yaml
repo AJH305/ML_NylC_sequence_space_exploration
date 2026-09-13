@@ -1,0 +1,17 @@
+extends: default.yaml
+experiment: metl
+features:
+  sources: [kidera, vhse, z_scales, atchley, pcp, physical, metl_g_20m_1d_target, metl_g_50m_1d_target]
+  learned:
+    metl_g_20m_1d_target:
+      kind: metl
+      model: metl-g-20m-1d
+      checkpoint: inputs/models/METL-G-20M-1D.pt
+      sha256: REPLACE_WITH_VERIFIED_CHECKPOINT_SHA256
+    metl_g_50m_1d_target:
+      kind: metl
+      model: metl-g-50m-1d
+      checkpoint: inputs/models/METL-G-50M-1D.pt
+      sha256: REPLACE_WITH_VERIFIED_CHECKPOINT_SHA256
+# Checkpoint download links and source are documented in README.md.
+# This template intentionally fails until actual checkpoint hashes are provided.

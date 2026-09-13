@@ -1,0 +1,213 @@
+{
+  "source_repository": "nylon_md_features",
+  "notebooks": [
+    {
+      "name": "02_lab_data_processing.ipynb",
+      "sha256": "864c4d1e24a1386c672bd182796e3d3bd36ea73143675c0eb2d6bae57b067a7f"
+    },
+    {
+      "name": "03_ANOVA_GP_feature_hardened_HPC.ipynb",
+      "sha256": "b59e35a14d0b69424d06f472e57d69a98445967e1d99b340a394e11b26221316"
+    },
+    {
+      "name": "04_dpp_calibrated.ipynb",
+      "sha256": "128bfe5a421422123c174c8ade38840afde569b5f2c72362e48f22b0d871ee07"
+    }
+  ],
+  "extracted_modules": [
+    {
+      "module": "src\\nylc\\features\\descriptors.py",
+      "definitions": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        "DescriptorSource",
+        "residue_descriptor_table"
+      ]
+    },
+    {
+      "module": "src\\nylc\\models\\kernels.py",
+      "definitions": [
+        "aa_descriptor_vector",
+        "pockets_to_position_descriptor_arrays",
+        "rbf_kernel_from_descriptors",
+        "normalize_lengthscales",
+        "build_position_kernels",
+        "build_position_cross_kernels",
+        "build_main_kernel",
+        "build_epistasis_kernel",
+        "build_total_epistatic_kernel",
+        "build_total_cross_kernel",
+        "standardize_target",
+        "fit_gp_from_kernel",
+        "gp_predict_from_fit",
+        "gaussian_nlpd",
+        "regression_metrics",
+        "is_learned_source_name",
+        "positive_pairwise_distances",
+        "source_training_arrays",
+        "robust_distance_scale",
+        "feature_source_diagnostics"
+      ]
+    },
+    {
+      "module": "src\\nylc\\models\\epistatic_gp.py",
+      "definitions": [
+        "EpistaticGP"
+      ]
+    },
+    {
+      "module": "src\\nylc\\validation\\baselines.py",
+      "definitions": [
+        "onehot_pocket_features",
+        "flattened_descriptor_features",
+        "inner_loocv_regressor_mae",
+        "select_ridge_alpha",
+        "select_knn_k",
+        "loocv_baselines"
+      ]
+    },
+    {
+      "module": "src\\nylc\\data\\candidates.py",
+      "definitions": [
+        null,
+        null,
+        null,
+        "robust_z",
+        "safe_numeric_col",
+        "structural_developability_components",
+        "validate_required_boltzgen_columns",
+        "get_aa_from_chain_sequence",
+        "extract_boltzgen_pocket_from_chain_sequences",
+        "add_boltzgen_candidates_from_full_sequences",
+        "check_designed_sequence_consistency"
+      ]
+    },
+    {
+      "module": "src\\nylc\\selection\\dpp.py",
+      "definitions": [
+        "normalize_to_correlation",
+        "elementary_symmetric_polynomials",
+        "sample_projection_dpp",
+        "sample_k_dpp",
+        "kernel_batch_diagnostics"
+      ]
+    }
+  ],
+  "reference_files": [
+    {
+      "path": "references\\dpp_calibrated\\activity_constraint_eligible_candidates.csv",
+      "sha256": "254b3bf452a08da58853f709b5dbfc96917e9d6b91d7d60a9a001008e7fd20eb"
+    },
+    {
+      "path": "references\\dpp_calibrated\\activity_constraint_sensitivity.csv",
+      "sha256": "518d614476d384909721dadff9942ef95028663d3eb7df0b6b7ba3d6f1b53155"
+    },
+    {
+      "path": "references\\dpp_calibrated\\all_candidates_activity_ranked.csv",
+      "sha256": "7ea45563b2b797c47bb1fd002294ec1fc33a072d342ea94d6ff2df8373ccab78"
+    },
+    {
+      "path": "references\\dpp_calibrated\\deployment_sigma_scaling_loocv_predictions.csv",
+      "sha256": "94683a7bc54a0f8205ad1eb2cdd83267745af13ef511378636196830185d7ba9"
+    },
+    {
+      "path": "references\\dpp_calibrated\\dpp_candidate_selection_frequency.csv",
+      "sha256": "f3719017d1162517764800a77ad0951c79797d516d0c460e48ee964ead340aa2"
+    },
+    {
+      "path": "references\\dpp_calibrated\\dpp_seed_sensitivity.csv",
+      "sha256": "ed6a79b78b0a9a1740f4d9462a003615e84345e977e7a3d15917abcfb70a17f5"
+    },
+    {
+      "path": "references\\dpp_calibrated\\exploitation_dpp_summary.csv",
+      "sha256": "4b39dc99b46c595183a51de962fa0194355719840d03beb8a76a654f7bab1640"
+    },
+    {
+      "path": "references\\dpp_calibrated\\final_hardened_hyperparameters.csv",
+      "sha256": "7186d1ef7afc0fa8a4ddd6024cc3ddc017302eb37cd83442354c140fcb419c26"
+    },
+    {
+      "path": "references\\dpp_calibrated\\final_hardened_model_selection.csv",
+      "sha256": "176ab36c671d6e1cf3c9b0e61a42f5256d8c6c8ef503b96d510ef945517cb241"
+    },
+    {
+      "path": "references\\dpp_calibrated\\final_uncalibrated_vs_calibrated_coverage.csv",
+      "sha256": "48a576bfd9c7fe0031719194dad1e968660389884e0ac41c29cf4be042b4e656"
+    },
+    {
+      "path": "references\\dpp_calibrated\\full_data_hardened_selection_grid.csv",
+      "sha256": "2d7ac4e95542f4a71775bdb106424e3fe94a8602171ba06838d8012ffe72dc2b"
+    },
+    {
+      "path": "references\\dpp_calibrated\\lab_test_panel_controls.csv",
+      "sha256": "a40d852d316a2fb76dfac8eed0d677e376b271e51bd5b7891899c248314a6059"
+    },
+    {
+      "path": "references\\dpp_calibrated\\lab_test_panel_generated_exploitation_dpp.csv",
+      "sha256": "afa580f36faed306bfffd857360b52d029d06f1972f5df0e9c2e7b06da0589e3"
+    },
+    {
+      "path": "references\\dpp_calibrated\\nested_loocv_all_inner_grids.csv",
+      "sha256": "322d3a94af848cec44e1d4e5323ee84baf6bd8bdd3688a5c86a3d57fa165caac"
+    },
+    {
+      "path": "references\\dpp_calibrated\\nested_loocv_metrics.csv",
+      "sha256": "d9b221af80c7db8b965c82f65f620a6accd8a4ed31a1f4ce255ead22e5f9f7b0"
+    },
+    {
+      "path": "references\\dpp_calibrated\\nested_loocv_predictions.csv",
+      "sha256": "151c2884e54e1f624e8912759cc6a90318169cacf8cb1b2e4b97a8e48c438896"
+    },
+    {
+      "path": "references\\dpp_calibrated\\nested_loocv_selected_settings.csv",
+      "sha256": "92af6cc5e14e8af2db57eb6bcad6484a8d36753fcf38397abbff8f07580f65fe"
+    },
+    {
+      "path": "references\\dpp_calibrated\\nested_loocv_uncertainty_calibration_comparison.csv",
+      "sha256": "48a576bfd9c7fe0031719194dad1e968660389884e0ac41c29cf4be042b4e656"
+    },
+    {
+      "path": "references\\dpp_calibrated\\panel_k_dpp_shortlist_20.csv",
+      "sha256": "9875560b2d9d35f29f21afa969f828fb700112e4e3ad737de3ca95280f3c574d"
+    },
+    {
+      "path": "references\\dpp_calibrated\\panel_k_dpp_shortlist_25.csv",
+      "sha256": "afa580f36faed306bfffd857360b52d029d06f1972f5df0e9c2e7b06da0589e3"
+    },
+    {
+      "path": "references\\dpp_calibrated\\panel_k_dpp_shortlist_30.csv",
+      "sha256": "a03a986839a44b4dcf6f8f07e3167c4e835cd3e39f282fbe7485f636a982b784"
+    },
+    {
+      "path": "references\\dpp_calibrated\\run_provenance.json",
+      "sha256": "04864cfa87ae82097dcb45d49d0e6800cd289a34960d28c9258ee683e71968cb"
+    },
+    {
+      "path": "references\\dpp_calibrated\\shortlist_panel_overlap.csv",
+      "sha256": "9566f5a09898f52d5ed8c16591f86262086c6aa13f202c26a3cf4d1e01ef70d2"
+    },
+    {
+      "path": "references\\dpp_calibrated\\shortlist_sensitivity_diagnostics.csv",
+      "sha256": "d179d2f288bca532d242021899eea21aaf1d214fd38659f917282a81e09c0519"
+    },
+    {
+      "path": "references\\dpp_calibrated\\shortlist_top_20.csv",
+      "sha256": "cdda7603ccbddc74fd8121ead4efe949bcaa6fa795f39a00a71a9e31ffe26078"
+    },
+    {
+      "path": "references\\dpp_calibrated\\shortlist_top_25.csv",
+      "sha256": "0d59846516c87b3499db1d083d1507395b7402637cda5310ad291255aa294a84"
+    },
+    {
+      "path": "references\\dpp_calibrated\\shortlist_top_30.csv",
+      "sha256": "254b3bf452a08da58853f709b5dbfc96917e9d6b91d7d60a9a001008e7fd20eb"
+    },
+    {
+      "path": "references\\dpp_calibrated\\sigma_scaling_summary.csv",
+      "sha256": "3939de96e8d3d80bc375f7a6c164d54dd1244b49e33928a9295f96c45d503868"
+    }
+  ]
+}

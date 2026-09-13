@@ -1,0 +1,52 @@
+schema_version: 1
+experiment: reference_cpu
+inputs:
+  lab_data: inputs/lab_data.csv
+  wt_fasta: inputs/WT.fasta
+  candidates: inputs/boltzgen_candidates.csv
+  checksums: inputs/checksums.json
+data:
+  subset_variant_ids: []
+  candidate_run: '160'
+features:
+  sources: [kidera, vhse, z_scales, atchley, pcp, physical]
+  learned: {}
+gp:
+  pca_components: [5, 10]
+  inner_restarts: 3
+  final_restarts: 8
+  seed: 20250308
+  max_iterations: 300
+  bounds:
+    lengthscale_multiplier: [0.25, 4.0]
+    sigma_main: [0.05, 4.0]
+    sigma_epi: [0.001, 4.0]
+    sigma_noise: [0.03, 2.0]
+  log_prior_sd: {lengthscale_multiplier: 0.70, sigma_main: 1.00, sigma_noise: 1.00}
+  noise_prior_center: 0.30
+  epistasis_shrinkage_scale: 1.00
+validation:
+  family_holdout: true
+  compare_model_families: true
+  baselines: true
+  baseline_descriptor: kidera
+selection:
+  sources: [kidera, vhse, z_scales, atchley, pcp, physical]
+  panel_size: 20
+  controls: 3
+  shortlist_sizes: [20, 25, 30]
+  primary_shortlist: 25
+  activity_fraction: 0.80
+  sensitivity_activity_fractions: [0.70, 0.80, 0.90]
+  seed: 20260823
+  sensitivity_seeds: 100
+  jitter: 1.0e-9
+  eigenvalue_tolerance: 1.0e-10
+  exclude_already_tested: false
+runtime:
+  device: cpu
+  seed: 42
+  threads: 1
+  batch_size: 4
+  deterministic: true
+  offline: true

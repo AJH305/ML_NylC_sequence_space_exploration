@@ -1,0 +1,107 @@
+"""Run from ML_NylC after syncing the locked workflow environment."""
+from pathlib import Path
+import sys
+from nylc.config import load_config
+from nylc.runner import Runner
+from nylc.provenance import digest_json
+
+ROOT = Path.cwd().resolve()
+CONFIG_PATH = config.get("experiment_config", "configs/default.yaml")
+C = load_config(ROOT / CONFIG_PATH)
+if "device" in config:
+    C["runtime"]["device"] = config["device"]
+R = Runner(ROOT, C)
+BASE = "results/" + C["experiment"]
+PYTHON = sys.executable
+SOURCE = sorted(str(p.relative_to(ROOT)) for p in (ROOT / "src").rglob("*.py")) + sorted(str(p.relative_to(ROOT)) for p in (ROOT / "src").rglob("*.json")) + ["pyproject.toml", "uv.lock", ".python-version"]
+NTHREADS = C["runtime"]["threads"]
+DEVICE = C["runtime"]["device"]
+
+def files(stage, names):
+    return [f"{BASE}/{stage}/{name}" for name in [*names, "stage.log", "manifest.json"]]
+
+PREPARE = files("prepare", ["lab.csv", "core.csv", "excluded.csv", "variants.fasta", "sequence_features.csv", "candidate_audit.csv", "candidates.csv", "summary.json"])
+FEATURES = files("features", ["sources.json"] + [name + ".npz" for name in C["features"]["sources"]])
+DIAGNOSTICS = files("diagnostics", ["feature_diagnostics.csv", "exploratory_source_sensitivity.csv", "nonidentical_pair_diagnostics.csv", "nonidentical_pair_distributions.csv"])
+evaluation_files = ["nested_predictions.csv", "nested_metrics.csv", "selected_settings.csv", "inner_grids.csv", "coverage.csv"]
+if C["validation"]["compare_model_families"]:
+    evaluation_files += ["model_family_predictions.csv", "model_family_metrics.csv", "paired_model_errors.csv"]
+if C["validation"]["baselines"]:
+    evaluation_files += ["baseline_predictions.csv", "baseline_metrics.csv"]
+if C["validation"]["family_holdout"]:
+    evaluation_files += ["position_holdout_predictions.csv", "position_holdout_metrics.csv", "position_holdout_settings.csv"]
+EVALUATE = files("evaluate", evaluation_files)
+FIT = files("fit", ["selection_grid.csv", "deployment_calibration.csv", "model.json"])
+PREDICT = files("predict", ["candidates.csv", "candidate_kernel.npz"])
+selection_files = ["all_candidates_activity_ranked.csv", "activity_constraint_eligible_candidates.csv", "activity_constraint_sensitivity.csv", "shortlist_sensitivity_diagnostics.csv", "lab_test_panel_generated.csv", "lab_test_panel_controls.csv", "shortlist_panel_overlap.csv", "dpp_seed_sensitivity.csv", "dpp_candidate_selection_frequency.csv", "primary_kernel.npz", "summary.json"]
+for size in C["selection"]["shortlist_sizes"]:
+    selection_files += [f"shortlist_top_{size}.csv", f"panel_k_dpp_shortlist_{size}.csv"]
+SELECT = files("select", selection_files)
+REPORT = files("report", ["nested_predictions.png", "nested_predictions.pdf", "dpp_kernel.png", "dpp_kernel.pdf", "report.html"])
+
+rule all:
+    input: REPORT
+
+rule prepare:
+    input: SOURCE + list(C["inputs"].values())
+    output: PREPARE
+    params: signature=digest_json(R.stage_configuration("prepare"))
+    threads: NTHREADS
+    resources: mem_mb=2000, runtime=10
+    shell: "{PYTHON:q} -m nylc stage prepare --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule features:
+    input: SOURCE + PREPARE + [s["checkpoint"] for n,s in C["features"]["learned"].items() if n in C["features"]["sources"] and "checkpoint" in s]
+    output: FEATURES
+    params: signature=digest_json(R.stage_configuration("features"))
+    threads: NTHREADS
+    resources: mem_mb=16000, runtime=120, gpu=0
+    shell: "{PYTHON:q} -m nylc stage features --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule diagnostics:
+    input: SOURCE + FEATURES
+    output: DIAGNOSTICS
+    params: signature=digest_json(R.stage_configuration("diagnostics"))
+    threads: NTHREADS
+    resources: mem_mb=8000, runtime=240
+    shell: "{PYTHON:q} -m nylc stage diagnostics --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule evaluate:
+    input: SOURCE + FEATURES
+    output: EVALUATE
+    params: signature=digest_json(R.stage_configuration("evaluate"))
+    threads: NTHREADS
+    resources: mem_mb=16000, runtime=1440
+    shell: "{PYTHON:q} -m nylc stage evaluate --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule fit:
+    input: SOURCE + FEATURES
+    output: FIT
+    params: signature=digest_json(R.stage_configuration("fit"))
+    threads: NTHREADS
+    resources: mem_mb=8000, runtime=240
+    shell: "{PYTHON:q} -m nylc stage fit --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule predict:
+    input: SOURCE + PREPARE + FEATURES + FIT
+    output: PREDICT
+    params: signature=digest_json(R.stage_configuration("predict"))
+    threads: NTHREADS
+    resources: mem_mb=8000, runtime=30
+    shell: "{PYTHON:q} -m nylc stage predict --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule select:
+    input: SOURCE + PREPARE + PREDICT
+    output: SELECT
+    params: signature=digest_json(R.stage_configuration("select"))
+    threads: NTHREADS
+    resources: mem_mb=4000, runtime=30
+    shell: "{PYTHON:q} -m nylc stage select --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule report:
+    input: SOURCE + DIAGNOSTICS + EVALUATE + SELECT
+    output: REPORT
+    params: signature=digest_json(R.stage_configuration("report"))
+    threads: NTHREADS
+    resources: mem_mb=4000, runtime=15
+    shell: "{PYTHON:q} -m nylc stage report --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"

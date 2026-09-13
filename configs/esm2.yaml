@@ -1,0 +1,24 @@
+extends: default.yaml
+experiment: esm2
+features:
+  sources: [kidera, vhse, z_scales, atchley, pcp, physical, esm2_target, esm2_global_delta, esm2_window_delta]
+  learned:
+    esm2_target:
+      kind: esm2
+      model: facebook/esm2_t6_8M_UR50D
+      revision: c731040fcd8d73dceaa04b0a8e6329b345b0f5df
+      representation: target
+    esm2_global_delta:
+      kind: esm2
+      model: facebook/esm2_t6_8M_UR50D
+      revision: c731040fcd8d73dceaa04b0a8e6329b345b0f5df
+      representation: global_delta
+    esm2_window_delta:
+      kind: esm2
+      model: facebook/esm2_t6_8M_UR50D
+      revision: c731040fcd8d73dceaa04b0a8e6329b345b0f5df
+      representation: window_delta
+      window_radius: 16
+# Model selection in notebook 04 remains descriptor-only. The three ESM-2
+# representations participate in the notebook-03 comparison and diagnostics.
+# Download the pinned model explicitly using tools/fetch_esm2.py before running.
