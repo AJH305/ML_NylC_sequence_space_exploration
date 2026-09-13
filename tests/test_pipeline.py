@@ -31,6 +31,22 @@ def test_full_smoke_resume_tamper_detection_and_selection_only_change(tmp_path, 
     runner.run()
     base = root / "results/smoke"
     assert (base / "report/report.html").is_file()
+    for name in ("nested_predictions", "dpp_kernel", "model_comparison_mae_spearman"):
+        assert (base / f"report/{name}.png").read_bytes().startswith(b"\x89PNG")
+        assert (base / f"report/{name}.pdf").read_bytes().startswith(b"%PDF")
+    import pandas as pd
+
+    metrics = pd.read_csv(base / "baselines/all_loocv_metrics.csv")
+    assert {
+        "ridge_mutation_count",
+        "ridge_physical",
+        "knn_physical",
+        "bayesian_ridge_physical",
+        "random_forest_physical_fixed",
+        "gp_hardened_physical_epistatic",
+        "gp_nested_source_selection",
+        "train_mean",
+    } == set(metrics.model)
     manifests = {
         stage: json.loads((base / stage / "manifest.json").read_text())
         for stage in ("prepare", "features", "fit", "predict", "select", "report")

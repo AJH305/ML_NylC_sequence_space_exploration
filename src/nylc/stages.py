@@ -276,6 +276,18 @@ def select(config, root, output):
         select_panel(candidates, arrays["kernel"], lab, config["selection"], output)
 
 
+def baselines(config, root, output):
+    base, _, core = prepared(config, root)
+    if not config["baseline_comparison"]["enabled"]:
+        write_json(output / "summary.json", {"status": "disabled"})
+        return
+    from nylc.validation.notebook_baselines import run_comparison
+
+    run_comparison(
+        config, root, output, core, pd.read_csv(base / "evaluate/nested_predictions.csv")
+    )
+
+
 def report(config, root, output):
     from nylc.reporting.figures import make_report
 
@@ -290,6 +302,7 @@ STAGES = {
     "fit": fit,
     "predict": predict,
     "select": select,
+    "baselines": baselines,
     "report": report,
 }
 DEPENDENCIES = {
@@ -300,7 +313,8 @@ DEPENDENCIES = {
     "fit": ["features"],
     "predict": ["prepare", "features", "fit"],
     "select": ["prepare", "predict"],
-    "report": ["diagnostics", "evaluate", "select"],
+    "baselines": ["evaluate"],
+    "report": ["diagnostics", "evaluate", "select", "baselines"],
 }
 CONFIG_KEYS = {
     "prepare": ["inputs", "data"],
@@ -310,5 +324,6 @@ CONFIG_KEYS = {
     "fit": ["gp"],
     "predict": ["gp"],
     "select": ["selection"],
-    "report": [],
+    "baselines": ["baseline_comparison", "gp", "runtime"],
+    "report": ["baseline_comparison"],
 }

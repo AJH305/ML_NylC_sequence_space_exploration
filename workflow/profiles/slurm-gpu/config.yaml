@@ -14,3 +14,8 @@ set-resources:
     gpu: 1
     mem_mb: 24000
     runtime: 240
+  baselines:
+    slurm_partition: c23g
+    gpu: 1
+    mem_mb: 24000
+    runtime: 1440

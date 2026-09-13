@@ -12,6 +12,18 @@ config = load_config(root / args.config)
 from huggingface_hub import snapshot_download
 
 seen = set()
+zero_shot = config["baseline_comparison"]["zero_shot"]
+if config["baseline_comparison"]["enabled"] and zero_shot["enabled"]:
+    identity = (zero_shot["model"], zero_shot["revision"])
+    print(
+        snapshot_download(
+            repo_id=identity[0],
+            revision=identity[1],
+            cache_dir=str(root / "cache/huggingface"),
+            allow_patterns=["*.json", "*.txt", "*.safetensors", "pytorch_model.bin"],
+        )
+    )
+    seen.add(identity)
 for name, settings in config["features"]["learned"].items():
     if name not in config["features"]["sources"] or settings["kind"] != "esm2":
         continue

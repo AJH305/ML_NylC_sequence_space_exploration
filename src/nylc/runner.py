@@ -49,6 +49,10 @@ class Runner:
             for name, settings in self.config["features"]["learned"].items():
                 if name in self.config["features"]["sources"] and settings.get("checkpoint"):
                     inputs[name] = sha256_file(self.root / settings["checkpoint"])
+        if stage == "baselines" and self.config["baseline_comparison"]["enabled"]:
+            settings = self.config["baseline_comparison"]["tabicl"]
+            if settings["enabled"]:
+                inputs["tabicl_checkpoint"] = sha256_file(self.root / settings["checkpoint"])
         dependencies = {}
         for parent in DEPENDENCIES[stage]:
             path = self.base / parent / "manifest.json"

@@ -3,10 +3,9 @@
 A reproducible Python pipeline for NylC laboratory data, Epistatic GP modelling,
 and experimental panel selection with calibrated uncertainty and k-DPP.
 
-The implementation is based on the agreed notebooks **02, 03 and 04**.
-MD analyses, the separate `Baslines` and `boltzgen_analysis` notebooks, and running
-BoltzGen are outside the project scope. Candidate preparation from notebook 04
-is included.
+The implementation covers notebooks **02, 03, 04 and Baslines**.
+MD analyses, the separate `boltzgen_analysis` notebook, and running BoltzGen remain
+outside the project scope. Candidate preparation from notebook 04 is included.
 
 ## Windows quick start
 
@@ -147,11 +146,67 @@ NYLC_PROFILE=slurm-gpu NYLC_DEVICE=cuda NYLC_CONFIG=configs/esm2.yaml \
   bash tools/run_slurm.sh --dry-run
 ```
 
-Only the feature stage requests a GPU in the GPU profile. Statistical stages
-remain CPU jobs. Parallel execution currently takes place between independent
+The GPU profile allocates GPUs to the feature and baseline-comparison stages,
+which can run ESM-2 or TabICL. Other statistical stages remain CPU jobs. Parallel execution currently takes place between independent
 stages; outer cross-validation folds run within a single job. The validation
 stage may therefore require an adjusted walltime limit. Installation and tests
 alone do not submit cluster jobs.
+
+## Separate Baselines notebook
+
+The default and smoke runs now include the separate `Baslines.ipynb` comparison:
+training mean, Ridge on mutation count, Ridge on physical descriptors, physical
+kNN, Bayesian Ridge and a fixed random forest on physical descriptors. Tuned models
+use nested LOOCV with training-only scaling. The four notebook-03 comparison models
+remain in `evaluate`; the separate notebook's models are exported under `baselines`.
+
+Run the comparison and its dependencies, or generate the complete report:
+
+```powershell
+.\.venv\Scripts\python.exe -m nylc run baselines --config configs/default.yaml --device cpu
+.\.venv\Scripts\python.exe -m nylc run --config configs/default.yaml --device cpu
+```
+
+Optional ESM-2 scores, Ridge with the zero-shot score, and the GP with a linear
+zero-shot prior mean:
+
+```powershell
+uv sync --locked --extra protein
+uv run --no-sync python tools/fetch_esm2.py --config configs/baselines-esm2.yaml
+uv run --no-sync nylc run --config configs/baselines-esm2.yaml --device cpu
+```
+
+To include TabICL as well:
+
+```powershell
+uv sync --locked --extra protein --extra tabicl
+uv run --no-sync python tools/fetch_esm2.py --config configs/baselines-full.yaml
+uv run --no-sync python tools/fetch_tabicl.py --config configs/baselines-full.yaml
+uv run --no-sync nylc run --config configs/baselines-full.yaml --device cpu
+```
+
+The explicit download commands provision pinned model weights. TabICL 2.0.3 uses
+its regression-v2 checkpoint with a verified SHA-256. Model size does not change
+when switching between CPU and CUDA. CPU inference is supported but may be slow.
+For WSL, select `.venv-linux` as described above when installing the extras.
+TabICL's local-checkpoint interface follows the [official API](https://tabicl.readthedocs.io/en/latest/api.html).
+
+The main comparison outputs are `baselines/all_loocv_predictions.csv`,
+`baselines/all_loocv_metrics.csv`, and `baselines/paired_model_errors.csv`.
+Optional models are explicitly enabled or recorded as disabled; old score files
+are never silently reused. Set `baseline_comparison.enabled: false` to skip this
+additional stage's calculations.
+
+The fixed physical Epistatic GP comparator is refitted in every outer fold.
+The pipeline's nested source-selection GP is shown separately. Raw ESM-2 scores
+have correlation metrics only, because they are not in activity units. Choosing
+the model with the lowest observed MAE is descriptive, not a further independently
+validated model-selection step.
+
+Every generated figure is saved in **both `.png` (300 dpi) and `.pdf`** under the
+experiment's `report/` directory, including `model_comparison_mae_spearman`.
+A shared export function enforces both formats. Tables and stage manifests remain
+available alongside the report.
 
 ## Project structure
 
@@ -168,7 +223,7 @@ alone do not submit cluster jobs.
 | `inputs` | Copies of raw data with checksums |
 | `references` | Historical results and provenance records, not pipeline inputs |
 
-Each experiment has eight stages:
+Each experiment has nine stages:
 `prepare → features → diagnostics/evaluate/fit → predict → select → report`.
 `diagnostics` and `evaluate` are independent of the final fit; the report collects
 their results. By default, `fit` uses the six classical sources from notebook 04,

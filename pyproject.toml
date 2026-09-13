@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+tabicl = ["tabicl==2.0.3"]
 protein = ["torch>=2.6,<3", "transformers>=4.48,<5"]
 metl = ["torch>=2.6,<3", "metl-pretrained @ git+https://github.com/gitter-lab/metl-pretrained.git@52358614c4b412e81e19e300485e8b85123bd903"]
 

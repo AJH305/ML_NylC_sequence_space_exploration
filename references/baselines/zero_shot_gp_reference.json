@@ -1,0 +1,24 @@
+{
+  "seed": 12,
+  "mean": [
+    6.968644528661863
+  ],
+  "std_latent": [
+    1.3588573073388077
+  ],
+  "std_observed": [
+    1.505636362193253
+  ],
+  "hyperparameters": {
+    "lengthscale_multiplier": 0.8507656370803462,
+    "sigma_main": 0.9138097813148979,
+    "sigma_epi": 0.08502767028172216,
+    "sigma_noise": 0.2860364392229291,
+    "regularized_neg_log_marginal_likelihood": 7.294332823377952,
+    "optimizer_success": true,
+    "optimizer_message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+    "optimizer_iterations": 26,
+    "successful_restarts": 1,
+    "n_restarts": 1
+  }
+}

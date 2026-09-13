@@ -50,6 +50,7 @@ def load_config(path):
         "features",
         "gp",
         "validation",
+        "baseline_comparison",
         "selection",
         "runtime",
     }

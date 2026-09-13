@@ -50,3 +50,29 @@ runtime:
   batch_size: 4
   deterministic: true
   offline: true
+baseline_comparison:
+  enabled: true
+  seed: 42
+  alphas:
+  - 0.01
+  - 0.1
+  - 1.0
+  - 10.0
+  - 100.0
+  knn_neighbors:
+  - 1
+  - 3
+  - 5
+  - 7
+  forest_estimators: 500
+  zero_shot:
+    enabled: false
+    model: facebook/esm2_t6_8M_UR50D
+    revision: c731040fcd8d73dceaa04b0a8e6329b345b0f5df
+  tabicl:
+    enabled: false
+    checkpoint: inputs/models/tabicl-regressor-v2-20260212.ckpt
+    sha256: 0db9cb538f114e79026bf08f45f41ad8dd7ad2de2aaca9a5ca8cd3bd9748ae7a
+    n_estimators: 8
+    seed: 42
+    revision: 4dcd344ece2c00be9e831fdd35bed57b5ad83e19

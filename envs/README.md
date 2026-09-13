@@ -5,6 +5,7 @@ Development: `uv sync --locked`
 Linux workflow: `uv sync --locked --no-dev --group workflow`
 ESM-2: add `--extra protein`
 METL: add `--extra metl`
+TabICL baseline: add `--extra tabicl`
 Interactive notebooks: add `--group notebooks`
 
 Use Python 3.12.14 (`.python-version`) and uv 0.12.13. The project restricts

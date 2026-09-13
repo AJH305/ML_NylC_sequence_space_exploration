@@ -16,3 +16,4 @@ cache/
 dist/
 *.egg-info/
 .ipynb_checkpoints/
+inputs/models/

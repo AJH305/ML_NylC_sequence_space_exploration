@@ -21,6 +21,7 @@ def main(argv=None):
             "fit",
             "predict",
             "select",
+            "baselines",
             "report",
         ],
     )

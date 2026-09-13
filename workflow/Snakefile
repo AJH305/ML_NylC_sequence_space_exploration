@@ -37,7 +37,17 @@ selection_files = ["all_candidates_activity_ranked.csv", "activity_constraint_el
 for size in C["selection"]["shortlist_sizes"]:
     selection_files += [f"shortlist_top_{size}.csv", f"panel_k_dpp_shortlist_{size}.csv"]
 SELECT = files("select", selection_files)
-REPORT = files("report", ["nested_predictions.png", "nested_predictions.pdf", "dpp_kernel.png", "dpp_kernel.pdf", "report.html"])
+baseline_files = ["summary.json"]
+if C['baseline_comparison']['enabled']:
+    baseline_files += ['all_loocv_predictions.csv', 'all_loocv_metrics.csv', 'paired_model_errors.csv']
+    if C['baseline_comparison']['zero_shot']['enabled']:
+        baseline_files += ['esm2_zero_shot_scores.csv', 'gp_zero_shot_prior_predictions.csv']
+BASELINES = files('baselines', baseline_files)
+report_figures = ['nested_predictions', 'dpp_kernel']
+if C['baseline_comparison']['enabled']:
+    report_figures += ['model_comparison_mae_spearman']
+REPORT = files('report', ['report.html'] + [name + '.' + ext for name in report_figures for ext in ('png', 'pdf')])
+
 
 rule all:
     input: REPORT
@@ -98,8 +108,16 @@ rule select:
     resources: mem_mb=4000, runtime=30
     shell: "{PYTHON:q} -m nylc stage select --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
 
+rule baselines:
+    input: SOURCE + EVALUATE + ([C['baseline_comparison']['tabicl']['checkpoint']] if C['baseline_comparison']['enabled'] and C['baseline_comparison']['tabicl']['enabled'] else [])
+    output: BASELINES
+    params: signature=digest_json(R.stage_configuration("baselines"))
+    threads: NTHREADS
+    resources: mem_mb=16000, runtime=1440, gpu=0
+    shell: "{PYTHON:q} -m nylc stage baselines --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
 rule report:
-    input: SOURCE + DIAGNOSTICS + EVALUATE + SELECT
+    input: SOURCE + DIAGNOSTICS + EVALUATE + SELECT + BASELINES
     output: REPORT
     params: signature=digest_json(R.stage_configuration("report"))
     threads: NTHREADS

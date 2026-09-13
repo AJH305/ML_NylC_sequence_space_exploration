@@ -29,7 +29,7 @@ layouts; the pipeline does not blindly execute every notebook cell.
 
 ESM and METL are explicit optional configurations. The classical default compares
 six descriptor families, matching the source scope of notebook 04. The separate
-`Baslines.ipynb` was not migrated following the scope restriction.
+`Baslines.ipynb` was subsequently added at the user's request; see below.
 
 ## Excluded boltzgen_analysis notebook
 
@@ -81,3 +81,47 @@ predictions against the historical table, joined by `candidate_id`. Means and
 observed standard deviations must satisfy `rtol=1e-7`, `atol=1e-6`. This verifies
 the numerical core; it does not replace a complete optimisation rerun with all
 sources and seeds.
+
+## Baselines notebook extension (14 September 2026)
+
+The added `baselines` stage includes the notebook's classical models, optional
+masked-marginal ESM-2 scores, Ridge with the zero-shot score, optional TabICL, and
+the physical Epistatic GP with a linear zero-shot prior mean. Source notebook and
+support-script checksums are recorded in `references/migration_sources.json`.
+
+Scientific details preserved from the source:
+
+- All mutated positions are masked simultaneously for ESM-2 scoring; log-odds are
+  summed relative to WT residues, and WT receives score zero.
+- Ridge and kNN hyperparameters are selected within inner LOOCV. StandardScaler
+  is part of each estimator pipeline and is fitted anew inside each training fold.
+- Bayesian Ridge and the 500-tree random forest are fixed comparators.
+- The zero-shot prior GP refits its linear mean and covariance parameters in each
+  outer fold. Its helper retains the original population target standard deviation
+  (`ddof=0`), whereas the existing notebook-04 GP uses `ddof=1`. This distinction
+  has not been silently harmonised. Its uncertainty is the original plug-in
+  calculation and does not propagate uncertainty in the fitted mean coefficients.
+
+Explicit adaptations:
+
+- Hardware no longer changes ESM model size or silently enables/disables TabICL.
+  Models are configured explicitly; weights are pinned and downloaded separately.
+- The notebook read an older GP prediction file and required every fold to have
+  selected physical/epistatic. The pipeline recomputes a clearly labelled fixed
+  physical Epistatic GP comparator and includes current nested source-selection
+  predictions separately. These are distinct evaluation protocols.
+- Comparators must contain exactly the same variants and observed targets. A
+  mismatch raises an error rather than a warning. Duplicate predictions are not
+  silently discarded.
+- kNN settings larger than an inner training set are excluded, allowing small
+  smoke datasets. The full 35-variant analysis retains k = 1, 3, 5, 7.
+- Missing SEM is imputed within training folds. Optimiser penalty failures are
+  rejected. Runtime thread limits replace the notebook's unrestricted CPU use.
+- The original MAE/Spearman comparison figure is now exported as PDF and PNG,
+  with English labels. Raw zero-shot scores are omitted from the MAE panel.
+- Paired model errors and the descriptive best-model gain are saved as CSV.
+
+Reference fixtures in `references/baselines` were generated from the unmodified
+original classical functions on nine variants and from the original zero-shot GP
+support script on deterministic synthetic data. Tests compare migrated predictions
+to these fixtures. They do not replace validation with real ESM/TabICL weights.

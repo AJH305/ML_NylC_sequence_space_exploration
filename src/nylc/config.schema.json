@@ -373,6 +373,124 @@
         "offline"
       ],
       "additionalProperties": false
+    },
+    "baseline_comparison": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "alphas": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          }
+        },
+        "knn_neighbors": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "forest_estimators": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "zero_shot": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          },
+          "required": [
+            "enabled",
+            "model",
+            "revision"
+          ],
+          "additionalProperties": false
+        },
+        "tabicl": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "checkpoint": {
+              "type": "string"
+            },
+            "sha256": {
+              "type": "string"
+            },
+            "n_estimators": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "seed": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "revision": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$"
+            }
+          },
+          "required": [
+            "enabled",
+            "checkpoint",
+            "sha256",
+            "n_estimators",
+            "seed",
+            "revision"
+          ],
+          "additionalProperties": false,
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "enabled": {
+                    "const": true
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "sha256": {
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "required": [
+        "enabled",
+        "seed",
+        "alphas",
+        "knn_neighbors",
+        "forest_estimators",
+        "zero_shot",
+        "tabicl"
+      ],
+      "additionalProperties": false
     }
   },
   "required": [
@@ -384,7 +502,8 @@
     "gp",
     "validation",
     "selection",
-    "runtime"
+    "runtime",
+    "baseline_comparison"
   ],
   "additionalProperties": false,
   "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -6,5 +6,11 @@
   "facebook/esm2_t33_650M_UR50D": {
     "revision": "08e4846e537177426273712802403f7ba8261b6c",
     "source": "https://huggingface.co/facebook/esm2_t33_650M_UR50D"
+  },
+  "jingang/TabICL": {
+    "revision": "4dcd344ece2c00be9e831fdd35bed57b5ad83e19",
+    "filename": "tabicl-regressor-v2-20260212.ckpt",
+    "sha256": "0db9cb538f114e79026bf08f45f41ad8dd7ad2de2aaca9a5ca8cd3bd9748ae7a",
+    "source": "https://huggingface.co/api/models/jingang/TabICL?blobs=true"
   }
 }

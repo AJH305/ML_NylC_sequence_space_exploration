@@ -12,6 +12,10 @@
     {
       "name": "04_dpp_calibrated.ipynb",
       "sha256": "128bfe5a421422123c174c8ade38840afde569b5f2c72362e48f22b0d871ee07"
+    },
+    {
+      "name": "Baslines.ipynb",
+      "sha256": "d8ad313e5d20d6f3b5ab46596c79e313065c4984d8edd5d8664fd5144b6317d9"
     }
   ],
   "extracted_modules": [
@@ -208,6 +212,16 @@
     {
       "path": "references\\dpp_calibrated\\sigma_scaling_summary.csv",
       "sha256": "3939de96e8d3d80bc375f7a6c164d54dd1244b49e33928a9295f96c45d503868"
+    }
+  ],
+  "baseline_support_scripts": [
+    {
+      "name": "esm2_zero_shot.py",
+      "sha256": "617fe7cb1620b660bc60dbbf02a0cff08653a13fa92ab7ef3ffdfa067d5946ff"
+    },
+    {
+      "name": "hardened_zero_shot_gp.py",
+      "sha256": "1646adfb7a450b41514b8b1130447672a4388d5c813aae894163f44ad1f697ff"
     }
   ]
 }
