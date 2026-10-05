@@ -294,6 +294,13 @@ def report(config, root, output):
     make_report(config, root, output)
 
 
+def figures(config, root, output):
+    """Publication figures for the thesis; reads published artifacts only."""
+    from nylc.reporting.thesis_figures import make_thesis_figures
+
+    make_thesis_figures(config, root, output)
+
+
 STAGES = {
     "prepare": prepare,
     "features": features,
@@ -304,6 +311,7 @@ STAGES = {
     "select": select,
     "baselines": baselines,
     "report": report,
+    "figures": figures,
 }
 DEPENDENCIES = {
     "prepare": [],
@@ -315,6 +323,7 @@ DEPENDENCIES = {
     "select": ["prepare", "predict"],
     "baselines": ["evaluate"],
     "report": ["diagnostics", "evaluate", "select", "baselines"],
+    "figures": ["diagnostics", "evaluate", "fit", "select", "baselines"],
 }
 CONFIG_KEYS = {
     "prepare": ["inputs", "data"],
@@ -326,4 +335,8 @@ CONFIG_KEYS = {
     "select": ["selection"],
     "baselines": ["baseline_comparison", "gp", "runtime"],
     "report": ["baseline_comparison"],
+    # Figure styling lives in the module, not in the configuration; the stage
+    # signature already covers the source checksum, so a pure styling change
+    # re-runs this stage on its own.
+    "figures": ["features", "gp", "validation", "selection", "baseline_comparison"],
 }

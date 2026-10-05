@@ -48,9 +48,14 @@ if C['baseline_comparison']['enabled']:
     report_figures += ['model_comparison_mae_spearman']
 REPORT = files('report', ['report.html'] + [name + '.' + ext for name in report_figures for ext in ('png', 'pdf')])
 
+# Thesis figures. Each file is one plot, written in both widths; the names come
+# from the module so the declared outputs cannot drift from what it builds.
+from nylc.reporting.thesis_figures import variant_names
+FIGURES = files('figures', ['style.json'] + [name + '.' + ext for name in variant_names(C) for ext in ('png', 'pdf')])
+
 
 rule all:
-    input: REPORT
+    input: REPORT + FIGURES
 
 rule prepare:
     input: SOURCE + list(C["inputs"].values())
@@ -123,3 +128,11 @@ rule report:
     threads: NTHREADS
     resources: mem_mb=4000, runtime=15
     shell: "{PYTHON:q} -m nylc stage report --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"
+
+rule figures:
+    input: SOURCE + DIAGNOSTICS + EVALUATE + FIT + SELECT + BASELINES
+    output: FIGURES
+    params: signature=digest_json(R.stage_configuration("figures"))
+    threads: NTHREADS
+    resources: mem_mb=4000, runtime=15
+    shell: "{PYTHON:q} -m nylc stage figures --config {CONFIG_PATH:q} --threads {threads} --device {DEVICE:q} --force"

@@ -23,6 +23,7 @@ def main(argv=None):
             "select",
             "baselines",
             "report",
+            "figures",
         ],
     )
     parser.add_argument("--config", default="configs/default.yaml")

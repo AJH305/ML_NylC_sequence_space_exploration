@@ -1,0 +1,1417 @@
+"""Thesis figures rebuilt from published stage artifacts.
+
+Every figure is a single plot. Multi-panel arrangements are assembled in LaTeX
+with ``subcaption``, so each file here holds one axes, carries its own
+explanatory title, centred over the plot, and places any legend to its right.
+
+Typography is matched to ``Thesis/main.tex``: ``\\documentclass[11pt]{article}``
+with ``fontspec``/Arial and ``a4paper, margin=2.5cm``, so the text block is
+16.0 cm = 6.30 in wide.
+
+Each figure is written twice, because a figure keeps its font sizes only when
+it is produced at the width it is finally displayed at:
+
+* ``<name>_full.pdf`` — 6.30 in, for ``\\includegraphics[width=\\textwidth]``
+* ``<name>_half.pdf`` — 3.02 in, for ``\\begin{subfigure}{0.48\\textwidth}``
+* ``<name>_stack.pdf`` — 4.41 in, for ``\\begin{subfigure}{0.70\\textwidth}``;
+  two near-square panels set side by side become unreadable, and stacked at
+  full width they exceed the 9.72 in text height, so they are stacked at this
+  width instead
+
+Never scale either one. ``bbox_inches="tight"`` is deliberately not used: it
+trims the canvas to the drawn content, which makes the saved width differ from
+the requested width, and LaTeX would then rescale the file.
+
+The half-width variant wraps the axis labels before the unit so the long
+activity unit still fits; the content is identical in both variants.
+
+No model is refitted here. Each figure reads only CSV, NPZ and JSON artifacts
+that upstream stages have already published, which is why the stage runs in
+seconds and can be re-run after a pure styling change.
+"""
+
+from dataclasses import dataclass, field
+import json
+import textwrap
+import logging
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import matplotlib
+
+matplotlib.use("Agg")
+from matplotlib import colormaps, font_manager
+from matplotlib import pyplot as plt
+
+# ---------------------------------------------------------------- geometry ---
+
+WIDTH_FULL = 6.30  # \textwidth of main.tex: 21.0 cm - 2 x 2.5 cm = 16.0 cm
+WIDTH_HALF = 3.02  # 0.48\textwidth, two side by side with a gutter
+WIDTH_STACK = 4.41  # 0.70\textwidth, two near-square panels stacked on a page
+VARIANTS = (("full", WIDTH_FULL), ("half", WIDTH_HALF), ("stack", WIDTH_STACK))
+DPI = 300
+
+# Font sizes stay below the 11 pt body text so figure text never competes with
+# it; 10 pt for labels and headings, 9 pt for ticks and legends.
+SIZE_LABEL = 10
+SIZE_TITLE = 10
+SIZE_TICK = 9
+SIZE_TICK_SMALL = 8
+SIZE_TICK_TINY = 6
+SIZE_LEGEND = 9
+
+# Preferred first, metric-compatible substitutes next. Liberation Sans has the
+# same metrics as Arial, so a cluster run without Arial stays faithful.
+FONT_CANDIDATES = ("Arial", "Liberation Sans", "Helvetica", "Nimbus Sans")
+FONT_FAITHFUL = frozenset({"Arial", "Liberation Sans"})
+
+# ------------------------------------------------------------------ colours ---
+
+TEAL = "#2f6f73"  # the thesis model
+GRAY = "#8a8f98"  # baselines and reference material
+RUST = "#b35c44"
+STEEL = "#4f7cac"
+BLUE_LIGHT = "#67a9cf"
+BLUE_MID = "#2166ac"
+BLUE_DARK = "#053061"
+RED = "#b2182b"
+ORANGE = "#f4a582"
+INK = "black"
+ERRORBAR = "#9bb7b9"
+
+UNIT = r"$\mathrm{\mu M/h/mg_{Enzyme}}$"
+
+MODEL_LABELS = {
+    "epistatic": "epistatic GP",
+    "additive": "additive GP",
+    "train_mean": "Train mean",
+    "ridge_onehot": "Ridge one-hot",
+    "knn_descriptor": "kNN descriptor",
+    "random_forest_onehot_fixed": "Random forest (one-hot)",
+    "gp_hardened_physical_epistatic": "epistatic GP (fixed physical)",
+    "gp_nested_source_selection": "epistatic GP (nested selection)",
+    "random_forest_physical_fixed": "Random forest (physical)",
+    "ridge_physical": "Ridge (physical)",
+    "bayesian_ridge_physical": "Bayesian ridge (physical)",
+    "knn_physical": "kNN (physical)",
+    "ridge_mutation_count": "Ridge (mutation count)",
+}
+
+
+class Labels:
+    """Axis labels; the half-width variant wraps before the unit."""
+
+    def __init__(self, wrap):
+        self.wrap = wrap
+        join = "\n" if wrap else " "
+        self.width = 26 if wrap else 200
+        self.activity = f"Spec. Act.{join}({UNIT})"
+        self.observed = f"Observed Spec. Act.{join}({UNIT})"
+        self.predicted = f"Predicted Spec. Act.{join}({UNIT})"
+        self.nested = "Nested-LOOCV prediction"
+        self.abs_error = f"Absolute error{join}({UNIT})"
+        self.pred_sd = f"Predicted SD{join}({UNIT})"
+        self.mae = f"MAE{join}({UNIT})"
+        self.loocv_mae = f"LOOCV MAE{join}({UNIT})"
+        self.outer_mae = f"Outer-LOOCV MAE{join}({UNIT})"
+        self.error_reduction = f"Absolute-error reduction from epistasis{join}({UNIT})"
+
+    def w(self, text):
+        """Wrap a long plain label so it fits the narrow variant."""
+        return textwrap.fill(text, self.width) if self.wrap else text
+
+
+# -------------------------------------------------------------------- style ---
+
+
+def resolve_font():
+    """Pick the closest available match to the Arial used by main.tex."""
+    available = {font.name for font in font_manager.fontManager.ttflist}
+    for name in FONT_CANDIDATES:
+        if name in available:
+            return name, name in FONT_FAITHFUL
+    return "DejaVu Sans", False
+
+
+def style(font):
+    """rcParams that reproduce the thesis typography."""
+    return {
+        "font.family": "sans-serif",
+        "font.sans-serif": [font, *FONT_CANDIDATES, "DejaVu Sans"],
+        "font.size": SIZE_LABEL,
+        "axes.labelsize": SIZE_LABEL,
+        "axes.titlesize": SIZE_TITLE,
+        "axes.titleweight": "bold",
+        "xtick.labelsize": SIZE_TICK,
+        "ytick.labelsize": SIZE_TICK,
+        "legend.fontsize": SIZE_LEGEND,
+        "figure.titlesize": SIZE_LABEL,
+        # Subscripts and superscripts in the unit must use the same face.
+        "mathtext.fontset": "custom",
+        "mathtext.default": "regular",
+        "mathtext.rm": font,
+        "mathtext.it": font,
+        "mathtext.bf": font,
+        "mathtext.sf": font,
+        "mathtext.cal": font,
+        "mathtext.tt": "DejaVu Sans Mono",
+        "axes.linewidth": 0.8,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+        "lines.linewidth": 1.0,
+        "lines.markersize": 4,
+        "grid.linewidth": 0.5,
+        "grid.alpha": 0.25,
+        "legend.frameon": False,
+        "savefig.dpi": DPI,
+        "savefig.transparent": False,
+        "pdf.fonttype": 42,  # embed as TrueType so the PDF stays text-searchable
+        "pdf.compression": 6,
+    }
+
+
+@dataclass
+class Panel:
+    """What the driver has to add around a drawn axes."""
+
+    title: str = None
+    legend: bool = False
+    legend_order: list = field(default_factory=list)
+    colorbar: tuple = None  # (mappable, label)
+
+
+def aspect(ratio):
+    """Height follows the width, so both variants share a shape."""
+    return lambda width: width * ratio
+
+
+def fixed(height):
+    """Height is set by the number of rows, not by the width."""
+    return lambda width: height
+
+
+def rotate_xticks(ax, angle=35, size=SIZE_TICK_SMALL):
+    plt.setp(
+        ax.get_xticklabels(),
+        rotation=angle,
+        ha="right",
+        rotation_mode="anchor",
+        fontsize=size,
+    )
+
+
+def identity_line(ax, *series, pad=0.05):
+    """Square axes with a 1:1 reference line across the pooled value range."""
+    pooled = np.concatenate([np.asarray(s, dtype=float) for s in series])
+    low, high = float(np.nanmin(pooled)), float(np.nanmax(pooled))
+    margin = pad * (high - low)
+    low, high = low - margin, high + margin
+    ax.plot([low, high], [low, high], "--", color=INK, linewidth=0.9, zorder=1)
+    ax.set(xlim=(low, high), ylim=(low, high))
+
+
+def rename_models(frame, column="model"):
+    frame = frame.copy()
+    frame[column] = frame[column].map(lambda name: MODEL_LABELS.get(name, name))
+    return frame
+
+
+def thin_ticks(ax, labels, half, axis="both"):
+    """At half width, dense categorical labels are shown every other step."""
+    step = 2 if half and len(labels) > 12 else 1
+    positions = range(0, len(labels), step)
+    shown = [labels[i] for i in positions]
+    if axis in ("x", "both"):
+        ax.set_xticks(list(positions), labels=shown)
+    if axis in ("y", "both"):
+        ax.set_yticks(list(positions), labels=shown)
+
+
+class Artifacts:
+    """Read-only accessor for one experiment's published stage outputs.
+
+    ``root`` is the repository root. It is used only for hand-maintained
+    experiment metadata that is not produced by any stage, namely the record
+    of which variants were actually built and measured in the laboratory.
+    """
+
+    def __init__(self, base, root=None):
+        self.base = Path(base)
+        self.root = Path(root) if root is not None else self.base.parent.parent
+
+    def has_external(self, relative):
+        return (self.root / relative).is_file()
+
+    def external_csv(self, relative):
+        return pd.read_csv(self.root / relative)
+
+    def has(self, *relatives):
+        return all((self.base / relative).is_file() for relative in relatives)
+
+    def csv(self, relative):
+        return pd.read_csv(self.base / relative)
+
+    def load_json(self, relative):
+        return json.loads((self.base / relative).read_text(encoding="utf-8"))
+
+    def npz(self, relative):
+        with np.load(self.base / relative, allow_pickle=False) as stored:
+            return {key: stored[key] for key in stored.files}
+
+
+# ------------------------------------------- figures from notebook 03 (GP) ---
+
+
+def _source_order(art):
+    return list(
+        art.csv("diagnostics/feature_diagnostics.csv")
+        .groupby("source", as_index=False)
+        .agg(median_distance=("median_distance", "median"))
+        .sort_values("median_distance")["source"]
+    )
+
+
+def draw_feature_distance_scale(ax, art, config, L, half):
+    summary = (
+        art.csv("diagnostics/feature_diagnostics.csv")
+        .groupby("source", as_index=False)
+        .agg(median_distance=("median_distance", "median"))
+        .sort_values("median_distance")
+    )
+    ax.bar(summary["source"], summary["median_distance"], color=TEAL)
+    ax.set_ylabel(L.w("Median non-zero distance"))
+    rotate_xticks(ax)
+    return Panel(title="Feature-space distance scale")
+
+
+def draw_kernel_saturation(ax, art, config, L, half):
+    summary = (
+        art.csv("diagnostics/feature_diagnostics.csv")
+        .groupby("source", as_index=False)
+        .agg(
+            median_distance=("median_distance", "median"),
+            near_zero=("fraction_kernel_lt_1e-3", "mean"),
+            near_one=("fraction_kernel_gt_0p9", "mean"),
+        )
+        .sort_values("median_distance")
+        .reset_index(drop=True)
+    )
+    positions = np.arange(len(summary))
+    ax.bar(positions - 0.18, summary["near_zero"], 0.36, label=r"kernel $<10^{-3}$", color=RUST)
+    ax.bar(positions + 0.18, summary["near_one"], 0.36, label=r"kernel $>0.9$", color=STEEL)
+    ax.set_xticks(positions, labels=summary["source"])
+    ax.set_ylim(0, 1)
+    ax.set_ylabel(L.w("Fraction of off-diagonal pairs"))
+    rotate_xticks(ax)
+    return Panel(title="Kernel saturation at that scale", legend=True)
+
+
+def _nonidentical(art):
+    return art.csv("diagnostics/nonidentical_pair_diagnostics.csv").groupby(
+        ["source", "lengthscale_multiplier"], as_index=False
+    ).agg(
+        fraction_identical_pairs=("fraction_identical_pairs", "mean"),
+        median_kernel=("kernel_median_nonidentical", "median"),
+        q25_kernel=("kernel_q25_nonidentical", "median"),
+        q75_kernel=("kernel_q75_nonidentical", "median"),
+        near_zero=("fraction_nonidentical_kernel_lt_1e-3", "mean"),
+    )
+
+
+def draw_identical_pairs(ax, art, config, L, half):
+    summary = _nonidentical(art)
+    order = _source_order(art)
+    first = sorted(summary["lengthscale_multiplier"].unique())[0]
+    table = (
+        summary[summary["lengthscale_multiplier"] == first].set_index("source").reindex(order)
+    )
+    ax.bar(order, table["fraction_identical_pairs"], color=GRAY)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel(L.w("Fraction of off-diagonal pairs"))
+    rotate_xticks(ax)
+    return Panel(title="Exactly identical feature pairs")
+
+
+def draw_kernel_median_iqr(ax, art, config, L, half):
+    summary = _nonidentical(art)
+    order = _source_order(art)
+    multipliers = sorted(summary["lengthscale_multiplier"].unique())
+    colors = dict(zip(multipliers, (RUST, TEAL, STEEL)))
+    positions = np.arange(len(order))
+    for offset, multiplier in zip((-0.24, 0.0, 0.24), multipliers):
+        table = (
+            summary[summary["lengthscale_multiplier"] == multiplier]
+            .set_index("source")
+            .reindex(order)
+        )
+        median = table["median_kernel"].to_numpy(dtype=float)
+        spread = np.vstack(
+            [
+                median - table["q25_kernel"].to_numpy(dtype=float),
+                table["q75_kernel"].to_numpy(dtype=float) - median,
+            ]
+        )
+        ax.errorbar(
+            positions + offset,
+            median,
+            yerr=spread,
+            fmt="o",
+            color=colors[multiplier],
+            capsize=2,
+            elinewidth=0.8,
+            label=f"c = {multiplier:g}",
+        )
+    ax.set_xticks(positions, labels=order)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel(L.w("RBF similarity, non-identical pairs"))
+    rotate_xticks(ax)
+    return Panel(title="Median and interquartile range", legend=True)
+
+
+def draw_near_zero_saturation(ax, art, config, L, half):
+    summary = _nonidentical(art)
+    order = _source_order(art)
+    multipliers = sorted(summary["lengthscale_multiplier"].unique())
+    colors = dict(zip(multipliers, (RUST, TEAL, STEEL)))
+    positions = np.arange(len(order))
+    for offset, multiplier in zip((-0.24, 0.0, 0.24), multipliers):
+        table = (
+            summary[summary["lengthscale_multiplier"] == multiplier]
+            .set_index("source")
+            .reindex(order)
+        )
+        ax.bar(
+            positions + offset,
+            table["near_zero"],
+            0.24,
+            color=colors[multiplier],
+            label=f"c = {multiplier:g}",
+        )
+    ax.set_xticks(positions, labels=order)
+    ax.set_ylim(0, 1)
+    ax.set_ylabel(r"Fraction with kernel $<10^{-3}$")
+    rotate_xticks(ax)
+    return Panel(title="Near-zero saturation, non-identical pairs", legend=True)
+
+
+def _descriptor_map(source_name):
+    from nylc.features.descriptors import CANONICAL_AA, residue_descriptor_table
+    from nylc.models.kernels import rbf_kernel_from_descriptors, robust_distance_scale
+
+    source = residue_descriptor_table(source_name, standardize=True)
+    features = source.scaled_table.loc[list(CANONICAL_AA)].to_numpy(dtype=float)
+    lengthscale = robust_distance_scale({"aa": features})
+    kernel = rbf_kernel_from_descriptors(features, lengthscale=lengthscale)
+    return kernel, lengthscale, list(CANONICAL_AA)
+
+
+def make_descriptor_map_drawer(source_name):
+    """One amino-acid similarity map per descriptor family.
+
+    This is the only figure that recomputes anything: a twenty-by-twenty RBF
+    kernel over the frozen descriptor table, which costs microseconds and keeps
+    the figure independent of any fold-specific feature matrix.
+    """
+
+    def draw(ax, art, config, L, half):
+        kernel, lengthscale, residues = _descriptor_map(source_name)
+        image = ax.imshow(kernel, vmin=0, vmax=1, cmap="viridis", interpolation="nearest")
+        ax.set_xticks(range(len(residues)), labels=residues)
+        ax.set_yticks(range(len(residues)), labels=residues)
+        ax.tick_params(labelsize=SIZE_TICK_TINY, length=2)
+        ax.spines[:].set_visible(True)
+        return Panel(
+            title=f"{source_name} ($\\ell$ = {lengthscale:.2f})",
+            colorbar=(image, "RBF similarity"),
+        )
+
+    return draw
+
+
+def draw_epistatic_observed_vs_predicted(ax, art, config, L, half):
+    predictions = art.csv("evaluate/model_family_predictions.csv")
+    epistatic = predictions[predictions["model"] == "epistatic"]
+    ax.scatter(
+        epistatic["observed"],
+        epistatic["predicted"],
+        s=28,
+        color=TEAL,
+        edgecolor="white",
+        linewidth=0.5,
+        zorder=3,
+    )
+    identity_line(ax, epistatic["observed"], epistatic["predicted"])
+    ax.set_xlabel(L.observed)
+    ax.set_ylabel(L.nested)
+    return Panel(title="Epistatic GP")
+
+
+def draw_epistatic_uncertainty_diagnostic(ax, art, config, L, half):
+    predictions = art.csv("evaluate/model_family_predictions.csv")
+    epistatic = predictions[predictions["model"] == "epistatic"]
+    ax.scatter(
+        epistatic["predicted_std_observed"],
+        epistatic["abs_error"],
+        s=28,
+        color=TEAL,
+        edgecolor="white",
+        linewidth=0.5,
+    )
+    ax.set_xlabel(L.pred_sd)
+    ax.set_ylabel(L.abs_error)
+    return Panel(title="Uncertainty diagnostic")
+
+
+def make_hyperparameter_drawer(column, label, title, bounded=False):
+    def draw(ax, art, config, L, half):
+        predictions = art.csv("evaluate/nested_predictions.csv").reset_index(drop=True)
+        sources = sorted(predictions["selected_descriptor_set"].unique())
+        palette = colormaps["tab10"]
+        colors = {name: palette(index % 10) for index, name in enumerate(sources)}
+        for name, group in predictions.groupby("selected_descriptor_set"):
+            ax.scatter(
+                group.index, group[column], s=20, alpha=0.85, color=colors[name], label=name
+            )
+        if bounded:
+            for edge in config["gp"]["bounds"]["lengthscale_multiplier"]:
+                ax.axhline(float(edge), color=RUST, linestyle="--", linewidth=0.9)
+        ax.set_xlabel("Outer LOOCV fold")
+        ax.set_ylabel(label)
+        ax.grid(True)
+        return Panel(title=title, legend=True)
+
+    return draw
+
+
+def draw_nested_held_out(ax, art, config, L, half):
+    predictions = art.csv("evaluate/nested_predictions.csv")
+    ax.errorbar(
+        predictions["observed"],
+        predictions["predicted"],
+        yerr=predictions["predicted_std_observed"],
+        fmt="o",
+        markersize=4,
+        alpha=0.85,
+        color=TEAL,
+        ecolor=ERRORBAR,
+        elinewidth=0.8,
+        capsize=1.5,
+        zorder=3,
+    )
+    identity_line(ax, predictions["observed"], predictions["predicted"])
+    ax.set_xlabel(L.observed)
+    ax.set_ylabel(L.nested)
+    return Panel(title="Held-out predictions with observed-response SD")
+
+
+def draw_nested_uncertainty_vs_error(ax, art, config, L, half):
+    predictions = art.csv("evaluate/nested_predictions.csv")
+    scatter = ax.scatter(
+        predictions["predicted_std_observed"],
+        predictions["abs_error"],
+        c=predictions["mutation_order"],
+        cmap="viridis",
+        s=30,
+        edgecolor="white",
+        linewidth=0.4,
+    )
+    ax.set_xlabel(L.pred_sd)
+    ax.set_ylabel(L.abs_error)
+    return Panel(
+        title="Does predicted uncertainty track error?",
+        colorbar=(scatter, "Mutation order"),
+    )
+
+
+def draw_nested_source_stability(ax, art, config, L, half):
+    counts = art.csv("evaluate/nested_predictions.csv")["selected_descriptor_set"].value_counts()
+    ax.bar(counts.index, counts.to_numpy(), color=STEEL)
+    ax.set_ylabel("Outer folds selected")
+    rotate_xticks(ax)
+    return Panel(title="Feature-source selection stability")
+
+
+def draw_nested_calibration(ax, art, config, L, half):
+    from scipy.stats import norm
+
+    predictions = art.csv("evaluate/nested_predictions.csv")
+    nominal = np.linspace(0.1, 0.95, 18)
+    standardized = (
+        predictions["observed"] - predictions["predicted"]
+    ).abs() / predictions["predicted_std_observed"]
+    empirical = [float((standardized <= norm.ppf((1 + p) / 2)).mean()) for p in nominal]
+    ax.plot([0, 1], [0, 1], "--", color=INK, linewidth=0.9, label="Ideal")
+    ax.plot(nominal, empirical, "o-", color=RUST, label="Empirical")
+    ax.set(xlim=(0, 1), ylim=(0, 1))
+    ax.set_xlabel(L.w("Nominal interval coverage"))
+    ax.set_ylabel("Empirical coverage")
+    return Panel(title="Uncertainty calibration", legend=True)
+
+
+def _performance_table(art):
+    families = art.csv("evaluate/model_family_metrics.csv").assign(source="gp")
+    baselines = art.csv("evaluate/baseline_metrics.csv").assign(source="baseline")
+    columns = ["model", "mae", "spearman", "source"]
+    return rename_models(
+        pd.concat([families[columns], baselines[columns]], ignore_index=True)
+    ).sort_values("mae")
+
+
+def draw_performance_mae(ax, art, config, L, half):
+    table = _performance_table(art)
+    ax.bar(
+        table["model"],
+        table["mae"],
+        color=[TEAL if s == "gp" else GRAY for s in table["source"]],
+    )
+    ax.set_ylabel(L.mae)
+    rotate_xticks(ax, angle=40)
+    return Panel(title="Prediction error")
+
+
+def draw_performance_spearman(ax, art, config, L, half):
+    table = _performance_table(art)
+    ax.bar(
+        table["model"],
+        table["spearman"],
+        color=[TEAL if s == "gp" else GRAY for s in table["source"]],
+    )
+    ax.axhline(0, color=INK, linewidth=0.8)
+    ax.set_ylabel("Spearman correlation")
+    ax.set_ylim(min(-0.05, float(table["spearman"].min()) - 0.05), 1.0)
+    rotate_xticks(ax, angle=40)
+    return Panel(title="Rank correlation")
+
+
+def make_family_scatter_drawer(model, title):
+    def draw(ax, art, config, L, half):
+        predictions = art.csv("evaluate/model_family_predictions.csv")
+        subset = predictions[predictions["model"] == model]
+        scatter = ax.scatter(
+            subset["observed"],
+            subset["predicted"],
+            c=subset["mutation_order"],
+            cmap="viridis",
+            s=30,
+            edgecolor="white",
+            linewidth=0.5,
+            zorder=3,
+        )
+        identity_line(ax, predictions["observed"], predictions["predicted"])
+        ax.set_xlabel(L.observed)
+        ax.set_ylabel(L.nested)
+        return Panel(title=title, colorbar=(scatter, "Mutation order"))
+
+    return draw
+
+
+def draw_paired_error_reduction(ax, art, config, L, half):
+    paired = art.csv("evaluate/paired_model_errors.csv")
+    if "error_reduction_epistatic_vs_additive" not in paired:
+        paired["error_reduction_epistatic_vs_additive"] = paired["additive"] - paired["epistatic"]
+    paired = paired.sort_values("error_reduction_epistatic_vs_additive", ascending=False)
+    reduction = paired["error_reduction_epistatic_vs_additive"].to_numpy(dtype=float)
+    ax.barh(paired["variant_id"], reduction, color=np.where(reduction >= 0, TEAL, RUST))
+    ax.axvline(0, color=INK, linewidth=0.9)
+    ax.invert_yaxis()
+    ax.tick_params(axis="y", labelsize=SIZE_TICK_TINY if half else SIZE_TICK_SMALL)
+    ax.set_xlabel(L.error_reduction)
+    ax.set_ylabel("Held-out variant")
+    return Panel(title="Paired error change: additive vs. epistatic")
+
+
+def make_error_by_order_drawer(source, title):
+    """Absolute error grouped by mutation order.
+
+    The nested predictions and the fixed-configuration family comparison are
+    different analyses and disagree on the trend, so each gets its own figure
+    and the caption has to name which one it shows.
+    """
+
+    def draw(ax, art, config, L, half):
+        predictions = art.csv(source)
+        if "model" in predictions.columns:
+            predictions = predictions[predictions["model"] == "epistatic"]
+        orders = sorted(predictions["mutation_order"].unique())
+        groups = [
+            predictions.loc[predictions["mutation_order"] == order, "abs_error"].to_numpy(
+                dtype=float
+            )
+            for order in orders
+        ]
+        ax.boxplot(
+            groups,
+            tick_labels=[str(order) for order in orders],
+            showfliers=False,
+            medianprops={"color": INK},
+        )
+        for position, order in enumerate(orders, start=1):
+            values = predictions.loc[
+                predictions["mutation_order"] == order, "abs_error"
+            ].to_numpy()
+            jitter = np.linspace(-0.09, 0.09, len(values)) if len(values) > 1 else np.zeros(1)
+            ax.scatter(
+                np.full(len(values), position) + jitter, values, s=18, color=TEAL, alpha=0.85
+            )
+        ax.set_xlabel("Mutation order")
+        ax.set_ylabel(L.abs_error)
+        return Panel(title=title)
+
+    return draw
+
+
+def draw_error_vs_predicted_sd(ax, art, config, L, half):
+    predictions = art.csv("evaluate/model_family_predictions.csv")
+    epistatic = predictions[predictions["model"] == "epistatic"]
+    scatter = ax.scatter(
+        epistatic["predicted_std_observed"],
+        epistatic["abs_error"],
+        c=epistatic["mutation_order"],
+        cmap="viridis",
+        s=30,
+        edgecolor="white",
+        linewidth=0.4,
+    )
+    ax.set_xlabel(L.pred_sd)
+    ax.set_ylabel(L.abs_error)
+    return Panel(title="Uncertainty diagnostic", colorbar=(scatter, "Mutation order"))
+
+
+def draw_descriptor_sensitivity(ax, art, config, L, half):
+    sensitivity = art.csv("diagnostics/exploratory_source_sensitivity.csv").copy()
+    sensitivity["label"] = (
+        sensitivity["descriptor_set"].astype(str) + " / " + sensitivity["model"].astype(str)
+    )
+    sensitivity = sensitivity.sort_values("mae")
+    ax.bar(
+        sensitivity["label"],
+        sensitivity["mae"],
+        color=np.where(
+            sensitivity["model"].astype(str).str.contains("epistatic"), TEAL, GRAY
+        ),
+    )
+    ax.set_ylabel(L.loocv_mae)
+    rotate_xticks(ax, angle=45, size=SIZE_TICK_TINY if half else SIZE_TICK_SMALL)
+    return Panel(title="Descriptor sensitivity (exploratory LOOCV)")
+
+
+# ------------------------------------- figures from notebook 04 (selection) ---
+
+
+def draw_shortlist_activity(ax, art, config, L, half):
+    diagnostics = art.csv("select/shortlist_sensitivity_diagnostics.csv").sort_values(
+        "shortlist_size"
+    )
+    floor = float(art.load_json("select/summary.json")["activity_floor"])
+    ax.plot(
+        diagnostics["shortlist_size"],
+        diagnostics["mean_predicted_activity"],
+        marker="o",
+        color=TEAL,
+        label="Panel mean",
+    )
+    ax.plot(
+        diagnostics["shortlist_size"],
+        diagnostics["min_predicted_activity"],
+        marker="s",
+        color=STEEL,
+        label="Panel minimum",
+    )
+    ax.axhline(floor, color=RED, linestyle="--", label="Activity floor")
+    ax.set_xticks(list(diagnostics["shortlist_size"]))
+    ax.set_xlabel("DPP shortlist size")
+    ax.set_ylabel(L.predicted)
+    return Panel(title="Activity retained after DPP diversification", legend=True)
+
+
+def draw_shortlist_diversity(ax, art, config, L, half):
+    diagnostics = art.csv("select/shortlist_sensitivity_diagnostics.csv").sort_values(
+        "shortlist_size"
+    )
+    ax.plot(
+        diagnostics["shortlist_size"],
+        diagnostics["isometry_score"],
+        marker="o",
+        color=BLUE_MID,
+    )
+    ax.set_xticks(list(diagnostics["shortlist_size"]))
+    ax.set_xlabel("DPP shortlist size")
+    ax.set_ylabel("Kernel isometry score")
+    return Panel(title="Kernel diversity of the selected panel")
+
+
+POSITION_COLUMNS = ["aa99", "aa134", "aa304", "aa330"]
+
+
+def tested_panel(art, config):
+    """The rows of the candidate ranking that were actually tested.
+
+    The experimental panel is drawn by a determinantal point process, so each
+    run of the ``select`` stage yields a different panel. The panel that was
+    built and measured therefore has to be recorded by hand; its path is
+    ``selection.tested_panel``. Only rows with ``panel_variant`` true are
+    returned, so variants that were tested outside the panel stay out of the
+    panel-selection figures.
+
+    Returns ``None`` when no such record is configured or present, in which
+    case the figures fall back to the panel drawn by this run and say so.
+    """
+    relative = config.get("selection", {}).get("tested_panel")
+    if not relative:
+        return None
+    if not art.has_external(relative):
+        logging.warning(
+            "figures: selection.tested_panel is set to %s but that file is absent; "
+            "panel figures fall back to the panel drawn by this run",
+            relative,
+        )
+        return None
+    tested = art.external_csv(relative)
+    tested = tested[tested["panel_variant"].astype(bool)]
+    ranked = art.csv("select/all_candidates_activity_ranked.csv")
+    columns = POSITION_COLUMNS + [
+        "candidate_id",
+        "activity_rank",
+        "predicted_activity_gp_mean",
+    ]
+    merged = tested.merge(ranked[columns], on=POSITION_COLUMNS, how="left")
+    unmatched = merged[merged["candidate_id"].isna()]
+    if not unmatched.empty:
+        logging.warning(
+            "figures: %d tested panel variants are not among the candidates of this "
+            "run and are omitted from the panel figures: %s",
+            len(unmatched),
+            ", ".join(unmatched["variant_id"].astype(str)),
+        )
+        merged = merged[merged["candidate_id"].notna()]
+    return merged
+
+
+def draw_activity_ranking(ax, art, config, L, half):
+    ranked = art.csv("select/all_candidates_activity_ranked.csv").sort_values("activity_rank")
+    eligible = art.csv("select/activity_constraint_eligible_candidates.csv")
+    tested = tested_panel(art, config)
+    panel_table = art.csv("select/lab_test_panel_generated.csv") if tested is None else tested
+    panel_label = "k-DPP panel (this run)" if tested is None else "Tested panel"
+    floor = float(art.load_json("select/summary.json")["activity_floor"])
+    fraction = config["selection"]["activity_fraction"]
+    ax.plot(
+        ranked["activity_rank"],
+        ranked["predicted_activity_gp_mean"],
+        color=GRAY,
+        linewidth=1.2,
+        label="Candidates",
+    )
+    ax.axhline(
+        floor, color=RED, linestyle="--", linewidth=1.0, label="Activity floor"
+    )
+    for size, color in zip(
+        config["selection"]["shortlist_sizes"], (BLUE_LIGHT, BLUE_MID, BLUE_DARK)
+    ):
+        if size <= len(eligible):
+            ax.axvline(size, color=color, linestyle=":", alpha=0.85, label=f"Top {size}")
+    ax.scatter(
+        panel_table["activity_rank"],
+        panel_table["predicted_activity_gp_mean"],
+        marker="o",
+        s=34,
+        color=ORANGE,
+        edgecolor=INK,
+        linewidth=0.5,
+        zorder=4,
+        label=panel_label,
+    )
+    ax.set_xlabel(L.w("GP posterior-mean activity rank"))
+    ax.set_ylabel(L.predicted)
+    return Panel(
+        title=f"Exploitation ranking and {fraction:.0%} constraint; "
+        f"{panel_label.lower()}, n = {len(panel_table)}",
+        legend=True,
+    )
+
+
+def _dpp_kernel(art, config):
+    stored = art.npz("select/primary_kernel.npz")
+    candidate_ids = [str(value) for value in stored["candidate_ids"]]
+    tested = tested_panel(art, config)
+    if tested is None:
+        selected = {str(value) for value in stored["selected_ids"]}
+        origin = "k-DPP selection of this run"
+    else:
+        selected = set(tested["candidate_id"].astype(str))
+        origin = "tested panel"
+    primary = config["selection"]["primary_shortlist"]
+    shortlist = art.csv(f"select/shortlist_top_{primary}.csv")
+    names = dict(zip(shortlist["candidate_id"].astype(str), shortlist["sequence"]))
+    labels = [
+        f"{rank}: {names.get(identifier, identifier)}"
+        for rank, identifier in enumerate(candidate_ids, start=1)
+    ]
+    chosen = np.flatnonzero([identifier in selected for identifier in candidate_ids])
+    return stored["kernel"], labels, chosen, primary, origin
+
+
+def draw_dpp_shortlist_kernel(ax, art, config, L, half):
+    kernel, labels, chosen, primary, origin = _dpp_kernel(art, config)
+    image = ax.imshow(kernel, cmap="viridis", vmin=0, vmax=1, interpolation="nearest")
+    ax.scatter(
+        chosen,
+        chosen,
+        marker="s",
+        s=18,
+        facecolors="none",
+        edgecolors=ORANGE,
+        linewidths=1.2,
+        label=origin.capitalize(),
+    )
+    thin_ticks(ax, labels, half)
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=SIZE_TICK_TINY)
+    plt.setp(ax.get_yticklabels(), fontsize=SIZE_TICK_TINY)
+    ax.tick_params(length=2)
+    ax.spines[:].set_visible(True)
+    return Panel(
+        title=f"Top-{primary} shortlist, {origin} marked",
+        colorbar=(image, "Normalized DPP kernel similarity"),
+    )
+
+
+def draw_dpp_panel_kernel(ax, art, config, L, half):
+    kernel, labels, chosen, _, origin = _dpp_kernel(art, config)
+    submatrix = kernel[np.ix_(chosen, chosen)]
+    chosen_labels = [labels[index] for index in chosen]
+    image = ax.imshow(submatrix, cmap="viridis", vmin=0, vmax=1, interpolation="nearest")
+    thin_ticks(ax, chosen_labels, half)
+    plt.setp(ax.get_xticklabels(), rotation=90, fontsize=SIZE_TICK_TINY)
+    plt.setp(ax.get_yticklabels(), fontsize=SIZE_TICK_TINY)
+    ax.tick_params(length=2)
+    ax.spines[:].set_visible(True)
+    return Panel(
+        title=f"{origin.capitalize()} (n = {len(chosen)})",
+        colorbar=(image, "Normalized DPP kernel similarity"),
+    )
+
+
+def draw_sigma_coverage(ax, art, config, L, half):
+    coverage = art.csv("evaluate/coverage.csv")
+    scale = float(art.load_json("fit/model.json")["sigma_scale"])
+    ax.plot([0, 1], [0, 1], "--", color=INK, linewidth=0.9, label="Ideal")
+    ax.plot(
+        coverage["nominal_coverage"],
+        coverage["uncalibrated_coverage"],
+        marker="o",
+        color=GRAY,
+        label="Uncalibrated",
+    )
+    ax.plot(
+        coverage["nominal_coverage"],
+        coverage["calibrated_coverage"],
+        marker="o",
+        color=BLUE_MID,
+        label="Sigma-scaled",
+    )
+    ax.set(xlim=(0.45, 1.0), ylim=(0.45, 1.0))
+    ax.set_xlabel(L.w("Nominal interval coverage"))
+    ax.set_ylabel(L.w("Empirical outer-LOOCV coverage"))
+    return Panel(title=f"Coverage calibration (c = {scale:.3f})", legend=True)
+
+
+def draw_sigma_residuals(ax, art, config, L, half):
+    predictions = art.csv("evaluate/nested_predictions.csv")
+    raw = (predictions["observed"] - predictions["predicted"]) / predictions[
+        "predicted_std_observed"
+    ]
+    calibrated = (predictions["observed"] - predictions["predicted"]) / predictions[
+        "predicted_std_observed_calibrated"
+    ]
+    bins = np.linspace(min(raw.min(), calibrated.min()) - 0.2, max(raw.max(), calibrated.max()) + 0.2, 12)
+    ax.hist(raw, bins=bins, alpha=0.5, color=GRAY, label="Uncalibrated")
+    ax.hist(calibrated, bins=bins, alpha=0.6, color=BLUE_MID, label="Sigma-scaled")
+    ax.axvline(0, color=INK, linewidth=0.9)
+    ax.set_xlabel("Standardized residual")
+    ax.set_ylabel("Number of variants")
+    return Panel(title="Standardized residuals", legend=True)
+
+
+def draw_sigma_interval_widths(ax, art, config, L, half):
+    predictions = (
+        art.csv("evaluate/nested_predictions.csv").sort_values("observed").reset_index(drop=True)
+    )
+    index = np.arange(len(predictions))
+    z95 = 1.95996398
+    ax.errorbar(
+        index - 0.14,
+        predictions["predicted"],
+        yerr=z95 * predictions["predicted_std_observed"],
+        fmt="o",
+        markersize=2,
+        color=GRAY,
+        ecolor="#bbbbbb",
+        elinewidth=0.7,
+        capsize=1.2,
+        label="Uncalibrated",
+    )
+    ax.errorbar(
+        index + 0.14,
+        predictions["predicted"],
+        yerr=z95 * predictions["predicted_std_observed_calibrated"],
+        fmt="o",
+        markersize=2,
+        color=BLUE_MID,
+        ecolor=BLUE_LIGHT,
+        elinewidth=0.7,
+        capsize=1.2,
+        label="Sigma-scaled",
+    )
+    ax.scatter(
+        index, predictions["observed"], marker="x", color=INK, s=14, zorder=5, label="Observed"
+    )
+    ax.set_xlabel(L.w("Outer-test variant (sorted by observed activity)"))
+    ax.set_ylabel(L.activity)
+    return Panel(title="Prediction-interval widths (95 %)", legend=True)
+
+
+# ----------------------------------- figure from notebook Baslines (models) ---
+
+
+# The baseline set the results chapter reports, in the order it lists them. It
+# mirrors REPORTED_REFERENCES in validation.paired_model_comparison so that the
+# figure and the paired tests cannot drift apart; the two GP variants are added
+# because they are the subject of the comparison rather than references in it.
+# The one-hot random forest is published by the evaluate stage and every other
+# model by the baselines stage, which is why this figure reads two metric files.
+# Left out on purpose: ridge on the substitution count, and the
+# Kidera-descriptor nearest-neighbor model, because the chapter reports one
+# variant of each model class on the physical descriptors.
+REPORTED_BASELINES = (
+    "gp_hardened_physical_epistatic",
+    "gp_nested_source_selection",
+    "random_forest_onehot_fixed",
+    "random_forest_physical_fixed",
+    "ridge_physical",
+    "bayesian_ridge_physical",
+    "knn_physical",
+    "train_mean",
+)
+
+METRIC_COLUMNS = ["model", "mae", "rmse", "r2", "pearson", "spearman"]
+
+
+def _notebook_baselines(art, drop=()):
+    """Metrics for the reported baseline set, merged across the two stages.
+
+    ``drop`` names models to exclude before the labels are applied, so a panel
+    can leave out a model whose statistic is not defined for it.
+    """
+    merged = pd.concat(
+        [
+            art.csv("baselines/all_loocv_metrics.csv")[METRIC_COLUMNS],
+            art.csv("evaluate/baseline_metrics.csv")[METRIC_COLUMNS],
+        ],
+        ignore_index=True,
+    )
+    # train_mean is published by both stages and the two rows agree.
+    merged = merged.drop_duplicates("model", keep="first")
+    missing = [name for name in REPORTED_BASELINES if name not in set(merged["model"])]
+    if missing:
+        raise ValueError(
+            f"Reported baseline models are missing from the metric files: {missing}; "
+            "run the evaluate and baselines stages before drawing the figures"
+        )
+    keep = [name for name in REPORTED_BASELINES if name not in drop]
+    merged = merged[merged["model"].isin(keep)]
+    merged = merged.assign(is_gp=merged["model"].str.startswith("gp_"))
+    return rename_models(merged).sort_values("mae", na_position="last")
+
+
+def draw_notebook_baselines_mae(ax, art, config, L, half):
+    """Mean absolute error of the reported baseline set.
+
+    ``train_mean`` is included here as the error reference and must be described
+    as such in the caption, not as a competing model.
+    """
+    metrics = _notebook_baselines(art)
+    activity = metrics[metrics["mae"].notna()]
+    ax.barh(
+        activity["model"],
+        activity["mae"],
+        color=[TEAL if flag else GRAY for flag in activity["is_gp"]],
+    )
+    ax.invert_yaxis()
+    ax.tick_params(axis="y", labelsize=SIZE_TICK_TINY if half else SIZE_TICK_SMALL)
+    ax.set_xlabel(L.outer_mae)
+    return Panel(title="Prediction error")
+
+
+def draw_notebook_baselines_spearman(ax, art, config, L, half):
+    """Rank correlation of the reported baseline set.
+
+    ``train_mean`` is excluded: it predicts a constant, so its rank correlation
+    is undefined and the -1 the implementation returns is a degenerate artifact
+    rather than an anticorrelation. Plotting it would both misstate that model
+    and compress the axis over which the remaining models differ.
+    """
+    metrics = _notebook_baselines(art, drop=("train_mean",))
+    ax.barh(
+        metrics["model"],
+        metrics["spearman"],
+        color=[TEAL if flag else GRAY for flag in metrics["is_gp"]],
+    )
+    ax.invert_yaxis()
+    ax.axvline(0, color=INK, linewidth=0.8)
+    ax.tick_params(axis="y", labelsize=SIZE_TICK_TINY if half else SIZE_TICK_SMALL)
+    ax.set_xlabel("Spearman correlation")
+    return Panel(title="Variant ranking")
+
+
+# ----------------------------------------------------------------- registry ---
+
+NESTED = ("evaluate/nested_predictions.csv",)
+FAMILY = ("evaluate/model_family_predictions.csv",)
+DIAG = ("diagnostics/feature_diagnostics.csv",)
+
+FIGURES = (
+    # name, drawer, required artifacts, height rule
+    ("feature_distance_scale", draw_feature_distance_scale, DIAG, aspect(0.80)),
+    ("kernel_saturation", draw_kernel_saturation, DIAG, aspect(0.80)),
+    (
+        "nonidentical_identical_pairs",
+        draw_identical_pairs,
+        ("diagnostics/nonidentical_pair_diagnostics.csv",) + DIAG,
+        aspect(0.80),
+    ),
+    (
+        "nonidentical_kernel_median_iqr",
+        draw_kernel_median_iqr,
+        ("diagnostics/nonidentical_pair_diagnostics.csv",) + DIAG,
+        aspect(0.80),
+    ),
+    (
+        "nonidentical_near_zero_saturation",
+        draw_near_zero_saturation,
+        ("diagnostics/nonidentical_pair_diagnostics.csv",) + DIAG,
+        aspect(0.80),
+    ),
+    ("epistatic_observed_vs_predicted", draw_epistatic_observed_vs_predicted, FAMILY, aspect(0.85)),
+    (
+        "epistatic_uncertainty_diagnostic",
+        draw_epistatic_uncertainty_diagnostic,
+        FAMILY,
+        aspect(0.85),
+    ),
+    (
+        "mll_lengthscale_multiplier",
+        make_hyperparameter_drawer(
+            "fitted_lengthscale_multiplier", "Lengthscale multiplier c",
+            "Fold stability: lengthscale", bounded=True,
+        ),
+        NESTED,
+        aspect(0.75),
+    ),
+    (
+        "mll_sigma_main",
+        make_hyperparameter_drawer(
+            "fitted_sigma_main", "Main-effect amplitude", "Fold stability: main effect"
+        ),
+        NESTED,
+        aspect(0.75),
+    ),
+    (
+        "mll_sigma_epi",
+        make_hyperparameter_drawer(
+            "fitted_sigma_epi", "Epistasis amplitude", "Fold stability: epistasis"
+        ),
+        NESTED,
+        aspect(0.75),
+    ),
+    (
+        "mll_sigma_noise",
+        make_hyperparameter_drawer(
+            "fitted_sigma_noise", "Residual-noise amplitude", "Fold stability: residual noise"
+        ),
+        NESTED,
+        aspect(0.75),
+    ),
+    ("nested_held_out_predictions", draw_nested_held_out, NESTED, aspect(0.85)),
+    ("nested_uncertainty_vs_error", draw_nested_uncertainty_vs_error, NESTED, aspect(0.80)),
+    ("nested_feature_source_stability", draw_nested_source_stability, NESTED, aspect(0.80)),
+    ("nested_uncertainty_calibration", draw_nested_calibration, NESTED, aspect(0.85)),
+    (
+        "model_performance_mae",
+        draw_performance_mae,
+        ("evaluate/model_family_metrics.csv", "evaluate/baseline_metrics.csv"),
+        aspect(0.85),
+    ),
+    (
+        "model_performance_spearman",
+        draw_performance_spearman,
+        ("evaluate/model_family_metrics.csv", "evaluate/baseline_metrics.csv"),
+        aspect(0.85),
+    ),
+    (
+        "observed_vs_predicted_additive",
+        make_family_scatter_drawer("additive", "Additive GP"),
+        FAMILY,
+        aspect(0.85),
+    ),
+    (
+        "observed_vs_predicted_epistatic",
+        make_family_scatter_drawer("epistatic", "Epistatic GP"),
+        FAMILY,
+        aspect(0.85),
+    ),
+    (
+        "paired_error_reduction_epistasis",
+        draw_paired_error_reduction,
+        ("evaluate/paired_model_errors.csv",),
+        fixed(6.10),
+    ),
+    (
+        "error_by_mutation_order",
+        make_error_by_order_drawer(
+            "evaluate/model_family_predictions.csv",
+            "Prediction error by mutation order (fixed configuration)",
+        ),
+        FAMILY,
+        aspect(0.80),
+    ),
+    (
+        "error_by_mutation_order_nested",
+        make_error_by_order_drawer(
+            "evaluate/nested_predictions.csv",
+            "Prediction error by mutation order (nested)",
+        ),
+        NESTED,
+        aspect(0.80),
+    ),
+    ("error_vs_predicted_sd", draw_error_vs_predicted_sd, FAMILY, aspect(0.80)),
+    (
+        "descriptor_sensitivity_mae",
+        draw_descriptor_sensitivity,
+        ("diagnostics/exploratory_source_sensitivity.csv",),
+        aspect(0.85),
+    ),
+    (
+        "shortlist_activity_retained",
+        draw_shortlist_activity,
+        ("select/shortlist_sensitivity_diagnostics.csv", "select/summary.json"),
+        aspect(0.80),
+    ),
+    (
+        "shortlist_kernel_diversity",
+        draw_shortlist_diversity,
+        ("select/shortlist_sensitivity_diagnostics.csv",),
+        aspect(0.80),
+    ),
+    (
+        "activity_ranking_constraint_panel",
+        draw_activity_ranking,
+        (
+            "select/all_candidates_activity_ranked.csv",
+            "select/activity_constraint_eligible_candidates.csv",
+            "select/lab_test_panel_generated.csv",
+            "select/summary.json",
+        ),
+        aspect(0.62),
+    ),
+    (
+        "dpp_shortlist_kernel",
+        draw_dpp_shortlist_kernel,
+        ("select/primary_kernel.npz",),
+        aspect(0.95),
+    ),
+    ("dpp_panel_kernel", draw_dpp_panel_kernel, ("select/primary_kernel.npz",), aspect(0.95)),
+    (
+        "sigma_coverage_calibration",
+        draw_sigma_coverage,
+        ("evaluate/coverage.csv", "fit/model.json"),
+        aspect(0.85),
+    ),
+    ("sigma_standardized_residuals", draw_sigma_residuals, NESTED, aspect(0.80)),
+    ("sigma_interval_widths", draw_sigma_interval_widths, NESTED, aspect(0.70)),
+    (
+        "notebook_baselines_mae",
+        draw_notebook_baselines_mae,
+        ("baselines/all_loocv_metrics.csv", "evaluate/baseline_metrics.csv"),
+        aspect(0.70),
+    ),
+    (
+        "notebook_baselines_spearman",
+        draw_notebook_baselines_spearman,
+        ("baselines/all_loocv_metrics.csv", "evaluate/baseline_metrics.csv"),
+        aspect(0.70),
+    ),
+)
+
+# One map per descriptor family, appended from the configured feature sources.
+DESCRIPTOR_MAP_PREFIX = "descriptor_kernel_map_"
+
+
+def descriptor_map_figures(config):
+    from nylc.features.descriptors import DESCRIPTOR_SOURCES
+
+    return tuple(
+        (
+            f"{DESCRIPTOR_MAP_PREFIX}{name}",
+            make_descriptor_map_drawer(name),
+            (),
+            aspect(0.95),
+        )
+        for name in config["features"]["sources"]
+        if name in DESCRIPTOR_SOURCES
+    )
+
+
+def all_figures(config):
+    return FIGURES + descriptor_map_figures(config)
+
+
+def expected_artifacts(config):
+    """Artifacts this configuration will publish.
+
+    Used before a run, when nothing exists yet, so the workflow can declare the
+    right outputs without inspecting the results tree.
+    """
+    paths = {
+        "diagnostics/feature_diagnostics.csv",
+        "diagnostics/nonidentical_pair_diagnostics.csv",
+        "diagnostics/exploratory_source_sensitivity.csv",
+        "evaluate/nested_predictions.csv",
+        "evaluate/coverage.csv",
+        "fit/model.json",
+        "select/shortlist_sensitivity_diagnostics.csv",
+        "select/summary.json",
+        "select/all_candidates_activity_ranked.csv",
+        "select/activity_constraint_eligible_candidates.csv",
+        "select/lab_test_panel_generated.csv",
+        "select/primary_kernel.npz",
+    }
+    if config["validation"]["compare_model_families"]:
+        paths |= {
+            "evaluate/model_family_predictions.csv",
+            "evaluate/model_family_metrics.csv",
+            "evaluate/paired_model_errors.csv",
+        }
+    if config["validation"]["baselines"]:
+        paths.add("evaluate/baseline_metrics.csv")
+    if config["baseline_comparison"]["enabled"]:
+        paths.add("baselines/all_loocv_metrics.csv")
+    return paths
+
+
+def figure_names(config, art=None):
+    """Names of the figures this configuration produces, without the variant suffix.
+
+    The Snakefile imports this so its declared outputs cannot drift from what
+    the module actually builds. Before a run there is nothing to inspect, so the
+    configuration decides; afterwards the published artifacts do.
+    """
+    available = expected_artifacts(config)
+    names = []
+    for name, _, required, _ in all_figures(config):
+        if required:
+            present = art.has(*required) if art is not None else set(required) <= available
+            if not present:
+                continue
+        names.append(name)
+    return names
+
+
+def variant_names(config, art=None):
+    """Every file stem, i.e. each figure in both widths."""
+    return [
+        f"{name}_{suffix}" for name in figure_names(config, art) for suffix, _ in VARIANTS
+    ]
+
+
+# ------------------------------------------------------------------- driver ---
+
+
+def save(fig, output, name):
+    """Write one PNG preview and one PDF for inclusion, both at exact size."""
+    output = Path(output)
+    fig.savefig(output / f"{name}.png", dpi=DPI)
+    fig.savefig(output / f"{name}.pdf", metadata={"CreationDate": None})
+    plt.close(fig)
+
+
+def build_figure(spec, art, config, output):
+    """Render one figure in both widths."""
+    name, drawer, _, height_of = spec
+    for suffix, width in VARIANTS:
+        half = suffix == "half"
+        labels = Labels(wrap=half)
+        fig, ax = plt.subplots(figsize=(width, height_of(width)), layout="constrained")
+        panel = drawer(ax, art, config, labels, half)
+        if panel.title:
+            title = textwrap.fill(panel.title, 30) if half else panel.title
+            # Centred over the axes, not over the whole canvas, so a legend or
+            # colorbar on the right does not push the title off-centre.
+            ax.set_title(title, loc="center", fontsize=SIZE_TITLE, pad=5)
+        if panel.colorbar is not None:
+            mappable, label = panel.colorbar
+            bar = fig.colorbar(mappable, ax=ax, pad=0.02)
+            bar.set_label(label, fontsize=SIZE_LABEL)
+            bar.ax.tick_params(labelsize=SIZE_TICK)
+        if panel.legend:
+            handles, texts = ax.get_legend_handles_labels()
+            # Outside placement; constrained layout reserves the space for it.
+            fig.legend(handles, texts, loc="outside right center", fontsize=SIZE_LEGEND)
+        save(fig, output, f"{name}_{suffix}")
+
+
+def make_thesis_figures(config, root, output):
+    """Build every available thesis figure into ``output``.
+
+    A figure whose upstream artifact is absent for this configuration (for
+    example the notebook baseline comparison when it is disabled) is skipped
+    and recorded, so a reduced experiment still produces a complete stage.
+    """
+    art = Artifacts(Path(root) / "results" / config["experiment"], root=root)
+    output = Path(output)
+    font, faithful = resolve_font()
+    if not faithful:
+        logging.warning(
+            "Neither Arial nor Liberation Sans is installed; figures fall back to %s "
+            "and will not match the thesis typography",
+            font,
+        )
+    built, skipped = [], {}
+    with plt.rc_context(style(font)):
+        for spec in all_figures(config):
+            name, _, required, _ = spec
+            if required and not art.has(*required):
+                missing = [item for item in required if not art.has(item)]
+                skipped[name] = missing
+                logging.info("figures: skipping %s; missing %s", name, ", ".join(missing))
+                continue
+            build_figure(spec, art, config, output)
+            built.append(name)
+            logging.info("figures: %s", name)
+    (output / "style.json").write_text(
+        json.dumps(
+            {
+                "font_requested": list(FONT_CANDIDATES),
+                "font_resolved": font,
+                "font_matches_thesis": faithful,
+                "widths_in": {"full": WIDTH_FULL, "half": WIDTH_HALF},
+                "usage": {
+                    "full": "\\includegraphics[width=\\textwidth]{figures/<name>_full.pdf}",
+                    "half": "inside \\begin{subfigure}{0.48\\textwidth} ... "
+                    "\\includegraphics[width=\\textwidth]{figures/<name>_half.pdf}",
+                },
+                "note": "Each file is one plot. Combine them in LaTeX with subcaption; "
+                "the panel letter comes from \\subcaption, not from the figure. "
+                "Never scale either variant.",
+                "dpi": DPI,
+                "figures_built": built,
+                "figures_skipped": skipped,
+                "files_written": len(built) * len(VARIANTS) * 2,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return built, skipped

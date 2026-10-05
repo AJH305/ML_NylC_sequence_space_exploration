@@ -1,0 +1,403 @@
+"""Paired tests for the retrospective model comparisons.
+
+The metric files report one number per model, which says which model scored
+better but not whether the difference is larger than the spread of the data.
+Every model in the evaluation was scored on the *same* outer split -- each
+variant contributes exactly one prediction per model, from a fold in which it
+was held out -- so the differences can be tested pairwise. This module does
+that and nothing else: it reads published error and prediction tables and adds
+the uncertainty around the differences already reported.
+
+For every comparison it reports the mean error difference with a percentile
+bootstrap interval over variants, the Wilcoxon signed-rank test on the same
+paired differences, the number of variants that improved, and the median
+difference. A mean advantage with a non-significant rank test and a small
+median is the signature of a few large wins rather than a broadly better
+model, so the four numbers are reported together and should be read together.
+
+The bootstrap resamples variants, not residuals, because the variant is the
+unit of observation. The percentile method is used rather than BCa: at n = 35
+the difference is small and the percentile interval is easier to state. The
+Wilcoxon test is preferred over a paired t-test because the error differences
+are right-skewed.
+
+Baseline comparisons form a family of tests against one reference model, so a
+Holm-corrected p-value is reported beside the uncompensated one. Reporting
+only the uncompensated value in a family of seven comparisons overstates the
+evidence; reporting only the corrected one hides the raw result.
+
+The baseline table of the results chapter reports a reference set that spans
+two stages: the physical-descriptor models and both GP variants are published by
+``baselines``, the one-hot random forest by ``evaluate``. One further family,
+``reported::<gp variant>``, is therefore assembled from the published prediction
+tables instead of from a single paired-error file. Its Holm correction runs
+within exactly the comparisons the chapter reports, which is why its adjusted
+p-values differ from the ``baselines::*`` families; the two are not
+interchangeable and must not be quoted against each other.
+
+Nothing here is refitted and no model is run, so the output depends only on
+the published artifacts::
+
+    python -m nylc.validation.paired_model_comparison --config configs/default.yaml
+
+It writes ``evaluate/paired_comparison_tests.csv``.
+"""
+
+import argparse
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+TEST_FILE = "paired_comparison_tests.csv"
+N_BOOTSTRAP = 10000
+BOOTSTRAP_SEED = 20260404
+ALPHA = 0.05
+
+# Columns in a paired-error table that are derived from the model columns
+# rather than being a model of their own.
+DERIVED_PREFIXES = ("error_reduction", "gain_")
+
+# The reference set reported in the results chapter, in the order the chapter
+# lists it. It is deliberately not the baselines family: the one-hot random
+# forest is included because it was the most accurate reference model of all
+# those evaluated and omitting it would understate the competition, while the
+# ridge regression on the substitution count and the Kidera-descriptor
+# nearest-neighbor model are left out because the chapter reports one variant of
+# each model class on the physical descriptors. Holm correction is applied within
+# exactly this set, so changing it changes every adjusted p-value the chapter
+# cites. Note that the training mean predicts a constant, so its rank
+# correlation -- and any difference in rank correlation against it -- is
+# undefined; the value the implementation returns for it is an artifact and is
+# not to be reported.
+REPORTED_REFERENCES = (
+    "random_forest_onehot_fixed",
+    "random_forest_physical_fixed",
+    "ridge_physical",
+    "bayesian_ridge_physical",
+    "knn_physical",
+    "train_mean",
+)
+
+
+def model_columns(frame):
+    """The model columns of a paired-error table, without derived columns."""
+    return [
+        column
+        for column in frame.columns
+        if column != "variant_id" and not column.startswith(DERIVED_PREFIXES)
+    ]
+
+
+def bootstrap_indices(n_observations, seed=BOOTSTRAP_SEED, draws=N_BOOTSTRAP):
+    """Resampling indices, drawn once so every statistic uses the same draws."""
+    rng = np.random.default_rng(seed)
+    return rng.integers(0, n_observations, size=(draws, n_observations))
+
+
+def percentile_interval(values, alpha=ALPHA):
+    """Percentile bootstrap interval, ignoring degenerate resamples."""
+    finite = values[np.isfinite(values)]
+    if finite.size == 0:
+        return float("nan"), float("nan")
+    low, high = np.percentile(finite, [100 * alpha / 2, 100 * (1 - alpha / 2)])
+    return float(low), float(high)
+
+
+def holm(p_values):
+    """Holm step-down adjustment within one family of comparisons."""
+    p_values = np.asarray(p_values, dtype=float)
+    order = np.argsort(p_values)
+    count = p_values.size
+    adjusted = np.empty(count)
+    running = 0.0
+    for rank, position in enumerate(order):
+        running = max(running, (count - rank) * p_values[position])
+        adjusted[position] = min(running, 1.0)
+    return adjusted
+
+
+def spearman(observed, predicted):
+    """Spearman correlation, nan for a degenerate resample."""
+    from scipy import stats
+
+    if np.unique(predicted).size < 2 or np.unique(observed).size < 2:
+        return float("nan")
+    return float(stats.spearmanr(observed, predicted).statistic)
+
+
+def spearman_rows(observed, predicted):
+    """Spearman for every row of two equally shaped arrays.
+
+    Spearman's rho is Pearson's correlation of the ranks, so ranking once per
+    row and correlating is identical to calling the scalar routine per row --
+    but it runs vectorized, which matters because the bootstrap needs one
+    correlation per resample. Average ranks are required: resampling with
+    replacement necessarily produces ties.
+    """
+    from scipy.stats import rankdata
+
+    ranked_observed = rankdata(observed, axis=1)
+    ranked_predicted = rankdata(predicted, axis=1)
+    centered_observed = ranked_observed - ranked_observed.mean(axis=1, keepdims=True)
+    centered_predicted = ranked_predicted - ranked_predicted.mean(axis=1, keepdims=True)
+    denominator = np.sqrt(
+        (centered_observed**2).sum(axis=1) * (centered_predicted**2).sum(axis=1)
+    )
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return np.where(
+            denominator > 0,
+            (centered_observed * centered_predicted).sum(axis=1) / denominator,
+            np.nan,
+        )
+
+
+def compare_errors(errors, focus, against, family, indices=None):
+    """Paired error statistics for one model against another."""
+    from scipy import stats
+
+    paired = errors[["variant_id", focus, against]].dropna()
+    focus_errors = paired[focus].to_numpy(dtype=float)
+    against_errors = paired[against].to_numpy(dtype=float)
+    # Positive means the focus model made the smaller error.
+    difference = against_errors - focus_errors
+    if indices is None:
+        indices = bootstrap_indices(difference.size)
+    low, high = percentile_interval(difference[indices].mean(axis=1))
+    statistic, p_value = (
+        stats.wilcoxon(focus_errors, against_errors)
+        if np.any(difference != 0)
+        else (float("nan"), 1.0)
+    )
+    return {
+        "family": family,
+        "focus_model": focus,
+        "against_model": against,
+        "n_variants": int(difference.size),
+        "focus_mae": float(focus_errors.mean()),
+        "against_mae": float(against_errors.mean()),
+        "delta_mae": float(difference.mean()),
+        "delta_mae_ci_low": low,
+        "delta_mae_ci_high": high,
+        "delta_mae_median": float(np.median(difference)),
+        "n_focus_better": int((difference > 0).sum()),
+        "wilcoxon_statistic": float(statistic),
+        "wilcoxon_p": float(p_value),
+    }
+
+
+def compare_spearman(predictions, focus, against, indices=None):
+    """Paired Spearman difference with a bootstrap interval, or nan."""
+    if predictions is None:
+        return {}
+    wide = predictions.pivot(index="variant_id", columns="model", values="predicted")
+    if focus not in wide.columns or against not in wide.columns:
+        return {}
+    truth = (
+        predictions.drop_duplicates("variant_id")
+        .set_index("variant_id")["observed"]
+        .reindex(wide.index)
+    )
+    frame = pd.concat([truth.rename("observed"), wide[[focus, against]]], axis=1).dropna()
+    observed = frame["observed"].to_numpy(dtype=float)
+    focus_predicted = frame[focus].to_numpy(dtype=float)
+    against_predicted = frame[against].to_numpy(dtype=float)
+    if indices is None or indices.shape[1] != observed.size:
+        indices = bootstrap_indices(observed.size)
+    resampled_observed = observed[indices]
+    draws = spearman_rows(resampled_observed, focus_predicted[indices]) - spearman_rows(
+        resampled_observed, against_predicted[indices]
+    )
+    low, high = percentile_interval(draws)
+    return {
+        "focus_spearman": spearman(observed, focus_predicted),
+        "against_spearman": spearman(observed, against_predicted),
+        "delta_spearman": spearman(observed, focus_predicted)
+        - spearman(observed, against_predicted),
+        "delta_spearman_ci_low": low,
+        "delta_spearman_ci_high": high,
+    }
+
+
+def check_pairing(errors, predictions, label):
+    """Both tables must describe the same variants, or the pairing is invalid."""
+    if predictions is None:
+        return
+    in_errors = set(errors["variant_id"])
+    in_predictions = set(predictions["variant_id"])
+    if in_errors != in_predictions:
+        missing = sorted(in_errors ^ in_predictions)[:5]
+        raise ValueError(
+            f"{label}: error and prediction tables cover different variants "
+            f"(e.g. {missing}); the paired tests would not be comparable"
+        )
+
+
+def run_family(errors, predictions, focus, others, family):
+    """One focus model against several others, Holm-corrected within the family."""
+    indices = bootstrap_indices(len(errors))
+    rows = []
+    for against in others:
+        row = compare_errors(errors, focus, against, family, indices)
+        row.update(compare_spearman(predictions, focus, against, indices))
+        rows.append(row)
+    if not rows:
+        return pd.DataFrame()
+    frame = pd.DataFrame(rows)
+    frame["wilcoxon_p_holm"] = holm(frame["wilcoxon_p"].to_numpy())
+    return frame
+
+
+def errors_from_predictions(frames):
+    """Wide per-variant absolute errors assembled from long prediction tables.
+
+    The reported reference set spans two stages, so its paired table cannot be
+    read from one published file and is built here instead. Every model must
+    cover the same variants, otherwise the differences are not paired.
+    """
+    usable = [frame for frame in frames if frame is not None]
+    if not usable:
+        return (None, None)
+    columns = ["model", "variant_id", "observed", "predicted", "abs_error"]
+    long_frame = pd.concat([frame[columns] for frame in usable], ignore_index=True)
+    # A model published by both stages (the training mean) appears twice.
+    long_frame = long_frame.drop_duplicates(["model", "variant_id"], keep="first")
+    counts = long_frame.groupby("model")["variant_id"].nunique()
+    if counts.nunique() != 1:
+        raise ValueError(
+            "Prediction tables cover different variants per model "
+            f"({counts.to_dict()}); the paired tests would not be comparable"
+        )
+    wide = long_frame.pivot(index="variant_id", columns="model", values="abs_error").reset_index()
+    wide.columns.name = None
+    return (wide, long_frame)
+
+
+def reported_family(wide, long_frame, references=REPORTED_REFERENCES):
+    """One family per GP variant against exactly the reported reference set."""
+    if wide is None:
+        return []
+    available = model_columns(wide)
+    missing = [name for name in references if name not in available]
+    if missing:
+        raise ValueError(
+            f"Reported reference models are missing from the prediction tables: {missing}; "
+            "run the evaluate and baselines stages before the paired tests"
+        )
+    focus_models = [name for name in available if name.startswith("gp_")]
+    return [
+        run_family(wide, long_frame, focus, list(references), f"reported::{focus}")
+        for focus in focus_models
+    ]
+
+
+def analyze(
+    model_family,
+    model_family_predictions,
+    baselines,
+    baseline_predictions,
+    sweep,
+    reported_predictions=None,
+):
+    """Every comparison the retrospective results section reports."""
+    blocks = []
+
+    if model_family is not None:
+        check_pairing(model_family, model_family_predictions, "model family")
+        blocks.append(
+            run_family(
+                model_family, model_family_predictions, "epistatic", ["additive"], "model_family"
+            )
+        )
+
+    if baselines is not None:
+        check_pairing(baselines, baseline_predictions, "baselines")
+        available = model_columns(baselines)
+        references = [name for name in available if name.startswith("gp_")]
+        others = [name for name in available if not name.startswith("gp_")]
+        for reference in references:
+            blocks.append(
+                run_family(
+                    baselines, baseline_predictions, reference, others, f"baselines::{reference}"
+                )
+            )
+
+    if reported_predictions is not None:
+        blocks.extend(reported_family(*errors_from_predictions(reported_predictions)))
+
+    if sweep is not None:
+        for descriptor_set, group in sweep.groupby("descriptor_set"):
+            blocks.append(
+                run_family(
+                    group.reset_index(drop=True),
+                    None,
+                    "epistatic",
+                    ["additive"],
+                    f"kernel_family_sweep::{descriptor_set}",
+                )
+            )
+
+    blocks = [block for block in blocks if not block.empty]
+    if not blocks:
+        raise ValueError("No paired error tables found; run evaluate and baselines first")
+    return pd.concat(blocks, ignore_index=True)
+
+
+def read_optional(path):
+    return pd.read_csv(path) if path.is_file() else None
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--root", default=".", help="ML_NylC project directory")
+    parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--experiment", help="overrides the experiment in the configuration")
+    args = parser.parse_args(argv)
+
+    root = Path(args.root).resolve()
+    if args.experiment:
+        experiment = args.experiment
+    else:
+        from nylc.config import load_config
+
+        experiment = load_config(root / args.config)["experiment"]
+
+    base = root / "results" / experiment
+    evaluate, baselines_dir = base / "evaluate", base / "baselines"
+
+    results = analyze(
+        read_optional(evaluate / "paired_model_errors.csv"),
+        read_optional(evaluate / "model_family_predictions.csv"),
+        read_optional(baselines_dir / "paired_model_errors.csv"),
+        read_optional(baselines_dir / "all_loocv_predictions.csv"),
+        read_optional(evaluate / "kernel_family_sweep_paired.csv"),
+        [
+            read_optional(baselines_dir / "all_loocv_predictions.csv"),
+            read_optional(evaluate / "baseline_predictions.csv"),
+        ],
+    )
+    results.to_csv(evaluate / TEST_FILE, index=False)
+
+    shown = [
+        "family",
+        "focus_model",
+        "against_model",
+        "delta_mae",
+        "delta_mae_ci_low",
+        "delta_mae_ci_high",
+        "delta_mae_median",
+        "n_focus_better",
+        "wilcoxon_p",
+        "wilcoxon_p_holm",
+    ]
+    with pd.option_context("display.width", 200, "display.max_columns", 50):
+        print(
+            results[shown].to_string(index=False, float_format=lambda v: f"{v:.3f}"),
+        )
+    print(f"\n{N_BOOTSTRAP} bootstrap resamples, seed {BOOTSTRAP_SEED}")
+    print(f"Written: {evaluate / TEST_FILE}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

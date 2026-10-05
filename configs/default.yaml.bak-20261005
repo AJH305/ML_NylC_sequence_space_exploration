@@ -36,11 +36,6 @@ selection:
   controls: 3
   shortlist_sizes: [20, 25, 30]
   primary_shortlist: 25
-  # Panel actually built and measured in the laboratory. The k-DPP draw is
-  # stochastic, so the panel of any given run differs from the one that was
-  # tested; the figures of the panel-selection section must show the tested
-  # one. Edit that file and re-run the figures stage with --force.
-  tested_panel: experiments/tested_variants.csv
   activity_fraction: 0.80
   sensitivity_activity_fractions: [0.70, 0.80, 0.90]
   seed: 20260823
