@@ -299,6 +299,9 @@
           "type": "integer",
           "minimum": 1
         },
+        "tested_panel": {
+          "type": "string"
+        },
         "activity_fraction": {
           "type": "number"
         },

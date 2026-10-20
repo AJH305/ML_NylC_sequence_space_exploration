@@ -1,0 +1,6 @@
+# TabICL baseline without the ESM-2 zero-shot comparators; CPU execution.
+extends: default.yaml
+experiment: baselines_tabicl
+baseline_comparison:
+  tabicl:
+    enabled: true

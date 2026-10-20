@@ -8,8 +8,8 @@ DVLS,boltzgen_candidate,True,D,V,L,S,F134V;D304L;R330S,3.0,160__task-1372632-91_
 DILS,boltzgen_candidate,True,D,I,L,S,F134I;D304L;R330S,3.0,160__task-1372632-129_NylC_paper_29,266.35,103.32,86.92,20,True
 SALS,boltzgen_candidate,True,S,A,L,S,D99S;F134A;D304L;R330S,4.0,160__task-1372632-106_NylC_paper_42,261.93,113.31,96.34,22,True
 SPLS,boltzgen_candidate,True,S,P,L,S,D99S;F134P;D304L;R330S,4.0,160__task-1372632-1_NylC_paper_25,260.97,113.26,96.3,23,True
-NYLG,synthetic_gene,False,N,Y,L,G,D99N;F134Y;D304L;R330G,4.0,,,,,,
-TYLG,synthetic_gene,False,T,Y,L,G,D99T;F134Y;D304L;R330G,4.0,,,,,,
+NLYG,synthetic_gene,False,N,L,Y,G,D99N;F134L;D304Y;R330G,4.0,,,,,,
+TLYG,synthetic_gene,False,T,L,Y,G,D99T;F134L;D304Y;R330G,4.0,,,,,,
 TALG,boltzgen_candidate,True,T,A,L,G,D99T;F134A;D304L;R330G,4.0,160__task-1372632-90_NylC_paper_33,272.2,113.15,96.2,15,True
 NPLS,boltzgen_candidate,True,N,P,L,S,D99N;F134P;D304L;R330S,4.0,160__task-1372632-1_NylC_paper_44,289.25,110.09,93.32,9,True
 NPLG,boltzgen_candidate,True,N,P,L,G,D99N;F134P;D304L;R330G,4.0,160__task-1372632-103_NylC_paper_42,294.29,109.64,92.9,6,True

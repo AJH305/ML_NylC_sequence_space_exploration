@@ -80,7 +80,7 @@ ORANGE = "#f4a582"
 INK = "black"
 ERRORBAR = "#9bb7b9"
 
-UNIT = r"$\mathrm{\mu M/h/mg_{Enzyme}}$"
+UNIT = r"$\mathrm{\mu mol/h/mg_{Enzyme}}$"
 
 MODEL_LABELS = {
     "epistatic": "epistatic GP",
@@ -96,6 +96,7 @@ MODEL_LABELS = {
     "bayesian_ridge_physical": "Bayesian ridge (physical)",
     "knn_physical": "kNN (physical)",
     "ridge_mutation_count": "Ridge (mutation count)",
+    "tabicl_v2_physical": "TabICL (physical)",
 }
 
 
@@ -741,6 +742,48 @@ def draw_shortlist_diversity(ax, art, config, L, half):
     return Panel(title="Kernel diversity of the selected panel")
 
 
+# Sequential by mutation load; the parental enzyme is set apart in gray.
+MUTATION_ORDER_COLORS = (GRAY, BLUE_LIGHT, BLUE_MID, BLUE_DARK, RUST)
+
+
+def draw_training_activity_ranking(ax, art, config, L, half):
+    """Measured activity of every characterized variant, ordered by activity.
+
+    Shows the data the model was fitted on: how the characterized variants
+    spread over the activity scale and how mutation order relates to that
+    spread. Error bars are the standard error over the replicates of a variant;
+    variants measured once carry no error bar.
+    """
+    data = art.csv("prepare/core.csv").sort_values("activity_pa6").reset_index(drop=True)
+    data["position"] = data.index
+    for order, group in data.groupby("mutation_order", sort=True):
+        shade = MUTATION_ORDER_COLORS[min(int(order), len(MUTATION_ORDER_COLORS) - 1)]
+        ax.bar(
+            group["position"],
+            group["activity_pa6"],
+            width=0.8,
+            color=shade,
+            label=f"{int(order)} substitutions" if order != 1 else "1 substitution",
+        )
+    if "activity_sem" in data:
+        ax.errorbar(
+            data["position"],
+            data["activity_pa6"],
+            yerr=data["activity_sem"].fillna(0.0),
+            fmt="none",
+            ecolor=ERRORBAR,
+            elinewidth=0.8,
+            capsize=1.5,
+        )
+    ax.set_xticks(list(data["position"]))
+    ax.set_xticklabels(data["variant_id"], rotation=90, fontsize=SIZE_TICK_TINY)
+    ax.set_xlim(-0.8, len(data) - 0.2)
+    ax.set_ylabel(L.activity)
+    ax.set_xlabel("Characterized variants, ordered by measured activity")
+    ax.tick_params(axis="x", length=0)
+    return Panel(title="Measured activity of the characterized variants", legend=True)
+
+
 POSITION_COLUMNS = ["aa99", "aa134", "aa304", "aa330"]
 
 
@@ -994,6 +1037,17 @@ REPORTED_BASELINES = (
     "train_mean",
 )
 
+# Published only when baseline_comparison.tabicl is enabled, so this model is
+# drawn when the metric files contain it instead of being required. Runs without
+# the checkpoint stay valid and simply omit the bar.
+OPTIONAL_BASELINES = ("tabicl_v2_physical",)
+
+# Titles are drawn inside the axes only when the figure is viewed on its own.
+# For the thesis they are off: the caption carries the description, and a title
+# in the image duplicates it. Panel titles remain defined because they document
+# what each drawer shows and are reused as subcaptions.
+DRAW_PANEL_TITLES = False
+
 METRIC_COLUMNS = ["model", "mae", "rmse", "r2", "pearson", "spearman"]
 
 
@@ -1018,7 +1072,8 @@ def _notebook_baselines(art, drop=()):
             f"Reported baseline models are missing from the metric files: {missing}; "
             "run the evaluate and baselines stages before drawing the figures"
         )
-    keep = [name for name in REPORTED_BASELINES if name not in drop]
+    optional = tuple(name for name in OPTIONAL_BASELINES if name in set(merged["model"]))
+    keep = [name for name in REPORTED_BASELINES + optional if name not in drop]
     merged = merged[merged["model"].isin(keep)]
     merged = merged.assign(is_gp=merged["model"].str.startswith("gp_"))
     return rename_models(merged).sort_values("mae", na_position="last")
@@ -1241,6 +1296,12 @@ FIGURES = (
         ("baselines/all_loocv_metrics.csv", "evaluate/baseline_metrics.csv"),
         aspect(0.70),
     ),
+    (
+        "training_activity_ranking",
+        draw_training_activity_ranking,
+        ("prepare/core.csv",),
+        aspect(0.75),
+    ),
 )
 
 # One map per descriptor family, appended from the configured feature sources.
@@ -1343,7 +1404,7 @@ def build_figure(spec, art, config, output):
         labels = Labels(wrap=half)
         fig, ax = plt.subplots(figsize=(width, height_of(width)), layout="constrained")
         panel = drawer(ax, art, config, labels, half)
-        if panel.title:
+        if panel.title and DRAW_PANEL_TITLES:
             title = textwrap.fill(panel.title, 30) if half else panel.title
             # Centred over the axes, not over the whole canvas, so a legend or
             # colorbar on the right does not push the title off-centre.
